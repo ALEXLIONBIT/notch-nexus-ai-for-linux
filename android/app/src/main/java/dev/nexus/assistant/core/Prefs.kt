@@ -85,6 +85,7 @@ object Prefs {
     var speechRate by mutableStateOf(1.05f)
     var speechPitch by mutableStateOf(0.85f)
     var autoListen by mutableStateOf(true)
+    var autoMode by mutableStateOf(false)       // true = niente conferme
 
     fun init(ctx: Context) {
         sp = ctx.getSharedPreferences("nexus", Context.MODE_PRIVATE)
@@ -106,6 +107,7 @@ object Prefs {
         sp.getString("palette", null)?.let { s -> palette = s.split(",").mapNotNull { it.toLongOrNull()?.toInt() } }
         speechRate = sp.getFloat("speechRate", 1.05f); speechPitch = sp.getFloat("speechPitch", 0.85f)
         autoListen = sp.getBoolean("autoListen", true)
+        autoMode = sp.getBoolean("autoMode", false)
     }
 
     fun save() {
@@ -118,7 +120,7 @@ object Prefs {
             .putString("helmetShape", helmetShape).putString("antenna", antenna).putBoolean("ears", ears)
             .putFloat("glow", glow).putString("customEye", customEye).putString("customMouth", customMouth)
             .putString("palette", palette.joinToString(",") { (it.toLong() and 0xFFFFFFFFL).toString() })
-            .putFloat("speechRate", speechRate).putFloat("speechPitch", speechPitch).putBoolean("autoListen", autoListen)
+            .putFloat("speechRate", speechRate).putFloat("speechPitch", speechPitch).putBoolean("autoListen", autoListen).putBoolean("autoMode", autoMode)
             .apply()
     }
 

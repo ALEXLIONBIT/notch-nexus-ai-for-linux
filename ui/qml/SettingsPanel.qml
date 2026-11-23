@@ -253,6 +253,19 @@ Rectangle {
             Dial { label: "Velocità"; from: 0.7; to: 1.6; value: panel.cfg.voice_speed ?? 1.0
                    shown: value.toFixed(2) + "×"; onCommitted: v => panel.sendCfg("voice_speed", v) }
 
+            // ---------- modalità ----------
+            Section { text: "Modalità" }
+            Chips {
+                options: ["manuale", "auto"]; labels: ["Manuale: chiede conferma", "⚡ Auto: fa tutto da solo"]
+                current: panel.cfg.auto_mode ? "auto" : "manuale"
+                onPicked: v => panel.sendCfg("auto_mode", v === "auto")
+            }
+            Text {
+                Layout.preferredWidth: col.width; wrapMode: Text.Wrap
+                text: "Puoi anche dire “Hey Jarvis, mettiti in automode” o “torna in manuale”. In Auto i comandi distruttivi (formattare dischi, cancellare il sistema) restano comunque bloccati."
+                color: panel.s.inkSoft; font { family: panel.s.sansFamily; pixelSize: 11 }
+            }
+
             // ---------- ascolto ----------
             Section { text: "Ascolto" }
             Heading { text: "Parola per svegliarlo" }

@@ -21,7 +21,11 @@ object Images {
 
     suspend fun generate(ctx: Context, prompt: String, shape: String): String = withContext(Dispatchers.IO) {
         val size = when (shape) { "verticale" -> "768x1024"; "orizzontale" -> "1024x768"; else -> "1024x1024" }
-        var base = Prefs.imageUrl.trim().trimEnd('/')
+        var base = Prefs.imageUrl.trim().trimEnd('/').ifBlank {
+            // se non è impostato, usa il PC con NEXUS (un cervello Ollama via Tailscale/rete)
+            Prefs.providers.firstOrNull { it.kind == "ollama" && !it.baseUrl.trimEnd('/').endsWith("/v1") && !it.baseUrl.contains("127.0.0.1") }
+                ?.baseUrl?.trimEnd('/') ?: ""
+        }
         var key = ""
         var model = "z-image-turbo"
         if (base.isBlank()) {                      // niente server NEXUS: prova con il provider OpenAI

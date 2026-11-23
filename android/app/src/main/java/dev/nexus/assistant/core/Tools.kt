@@ -20,7 +20,7 @@ data class ToolResult(val text: String, val imageB64: String? = null)
 
 /** Le azioni che il cervello può fare sul telefono. */
 class Tools(private val ctx: Context, private val onStep: (String) -> Unit, private val hideUi: () -> Unit,
-            private val onImage: (String) -> Unit = {}) {
+            private val onImage: (String) -> Unit = {}, private val confirm: suspend (String) -> Boolean = { true }) {
 
     // ------------------------------------------------------------ schema per il modello
     private fun fn(name: String, desc: String, props: JSONObject = JSONObject(), req: List<String> = emptyList()) =
@@ -47,6 +47,9 @@ class Tools(private val ctx: Context, private val onStep: (String) -> Unit, priv
         fn("flashlight", "Accende o spegne la torcia.", JSONObject().put("on", JSONObject().put("type", "boolean")), listOf("on")),
         fn("set_volume", "Imposta il volume dei media in percentuale.", JSONObject().put("percent", n("0-100")), listOf("percent")),
         fn("battery", "Livello della batteria e se è in carica."),
+        fn("run_shell", "Esegue un comando nella shell del telefono (sandbox dell'app: getprop, ls, ping, date, df, settings get, ecc). Ritorna l'output.",
+            JSONObject().put("command", s("comando sh")), listOf("command")),
+        fn("set_mode", "Automode ('auto': niente conferme) o modalità manuale ('manuale').", JSONObject().put("mode", e("auto", "manuale")), listOf("mode")),
         fn("generate_image", "Crea un'immagine da una descrizione e la salva nella Galleria. Scrivi il prompt in inglese, dettagliato.",
             JSONObject().put("prompt", s("descrizione dettagliata in inglese")).put("shape", e("quadrata", "verticale", "orizzontale")), listOf("prompt")),
         fn("open_settings", "Apre una pagina delle impostazioni.",
@@ -134,6 +137,12 @@ class Tools(private val ctx: Context, private val onStep: (String) -> Unit, priv
                 onStep("WhatsApp"); hideUi()
                 val num = a.optString("number").filter { it.isDigit() }
                 start(Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$num?text=${enc(a.optString("text"))}")))
+                // in automode lo invia anche, se l'accessibilità è attiva
+                if (dev.nexus.assistant.core.Prefs.autoMode && a11y() != null) {
+                    delay(3000)
+                    val sent = a11y()?.clickText("Invia") ?: a11y()?.clickText("Send")
+                    if (sent != null) return ToolResult("Messaggio WhatsApp inviato.")
+                }
                 return ToolResult("Ho aperto WhatsApp con il messaggio pronto: premi invia.")
             }
             "navigate" -> {
@@ -160,6 +169,24 @@ class Tools(private val ctx: Context, private val onStep: (String) -> Unit, priv
                 val path = Images.generate(ctx, a.optString("prompt"), a.optString("shape", "quadrata"))
                 onImage(path)
                 return ToolResult("Immagine creata e salvata nella Galleria (cartella NEXUS).")
+            }
+            "run_shell" -> {
+                val cmd = a.optString("command")
+                if (Regex("""\brm\s+-[a-z]*r|\bmkfs|\bdd\s+.*of=/dev""").containsMatchIn(cmd)) return ToolResult("Comando bloccato: troppo pericoloso.")
+                onStep("Terminale: ${cmd.take(40)}")
+                if (!confirm("Posso eseguire: $cmd ?")) return ToolResult("L'utente non ha dato il permesso.")
+                val out = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val p = ProcessBuilder("sh", "-c", cmd).redirectErrorStream(true).start()
+                    val done = p.waitFor(60, java.util.concurrent.TimeUnit.SECONDS)
+                    val text = p.inputStream.bufferedReader().readText()
+                    if (!done) { p.destroyForcibly(); "$text\n(interrotto dopo 60 s)" } else "exit ${p.exitValue()}\n$text"
+                }
+                return ToolResult(out.takeLast(3000).ifBlank { "(nessun output)" })
+            }
+            "set_mode" -> {
+                dev.nexus.assistant.core.Prefs.autoMode = a.optString("mode") == "auto"; dev.nexus.assistant.core.Prefs.save()
+                onStep(if (dev.nexus.assistant.core.Prefs.autoMode) "Automode attivo" else "Modalità manuale")
+                return ToolResult(if (dev.nexus.assistant.core.Prefs.autoMode) "Automode attivo." else "Modalità manuale.")
             }
             "battery" -> {
                 val bm = ctx.getSystemService(Context.BATTERY_SERVICE) as BatteryManager

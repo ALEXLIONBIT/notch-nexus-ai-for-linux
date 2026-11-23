@@ -80,7 +80,7 @@ class AssistActivity : ComponentActivity() {
         LaunchedEffect(Core.hideRequest) { if (Core.hideRequest != firstHide) finish() }
         // si chiude da sola qualche secondo dopo aver finito di parlare
         LaunchedEffect(Core.state, Core.sayText) {
-            if (Core.state == "idle" && Core.sayText.isEmpty() && Core.reply.isNotEmpty()) { delay(5000); finish() }
+            if (Core.state == "idle" && Core.sayText.isEmpty() && Core.reply.isNotEmpty() && Core.confirmText.isEmpty()) { delay(5000); finish() }
         }
         Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) { onClose() }) {
             BoxWithConstraints(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
@@ -102,7 +102,7 @@ class AssistActivity : ComponentActivity() {
                         return@Column
                     }
                     Helmet(Modifier.fillMaxWidth(if (tablet) .5f else .62f))
-                    StatusLine()
+                    androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) { StatusLine(); androidx.compose.foundation.layout.Spacer(Modifier.padding(6.dp)); ModeChip() }
                     if (Core.transcript.isNotBlank()) Text("Tu: " + Core.transcript, color = th.inkSoft, fontSize = 14.sp, textAlign = TextAlign.Center)
                     if (Core.sayText.isNotEmpty())
                         Subtitle(th.ink, th.inkSoft.copy(alpha = .4f), TextStyle(fontFamily = FontFamily.Monospace, fontSize = 20.sp,
@@ -111,6 +111,7 @@ class AssistActivity : ComponentActivity() {
                         Text(Core.reply, color = th.ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
                     Core.lastImage?.let { GeneratedImage(it, Modifier.fillMaxWidth(if (tablet) .6f else .8f)) }
                     Core.steps.takeLast(3).forEach { Text("• $it", color = th.inkSoft, fontSize = 13.sp) }
+                    ConfirmBar()
                     AskBar()
                 }
             }

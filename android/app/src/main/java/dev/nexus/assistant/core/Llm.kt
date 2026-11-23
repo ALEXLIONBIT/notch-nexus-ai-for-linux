@@ -118,7 +118,7 @@ object Llm {
             when {
                 m.role == "tool" -> o.put("tool_call_id", m.toolCallId ?: "").put("content", m.content)
                 m.toolCalls.isNotEmpty() -> {
-                    o.put("content", if (m.content.isBlank()) JSONObject.NULL else m.content)
+                    o.put("content", m.content)
                     o.put("tool_calls", JSONArray().apply {
                         m.toolCalls.forEach {
                             put(JSONObject().put("id", it.id).put("type", "function")

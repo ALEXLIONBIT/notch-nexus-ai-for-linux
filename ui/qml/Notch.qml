@@ -115,6 +115,17 @@ Item {
                         NumberAnimation { target: pulse; property: "v"; to: 1; duration: 600 } } }
             }
 
+            Rectangle {   // interruttore Auto / Manuale
+                visible: notch.expanded
+                readonly property bool auto: notch.s.config.auto_mode === true
+                width: modeTxt.implicitWidth + 18; height: 24; radius: 12
+                color: auto ? "#ffc861" : "#1c232c"
+                Text { id: modeTxt; anchors.centerIn: parent; text: parent.auto ? "⚡ Auto" : "Manuale"
+                       color: parent.auto ? "#1a1306" : "#c9d1da"; font { family: notch.s.sansFamily; pixelSize: 12; weight: Font.Bold } }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                    onClicked: notch.s.send("config", { config: { auto_mode: !parent.auto } }) }
+            }
+
             Row {
                 visible: notch.expanded
                 spacing: 2

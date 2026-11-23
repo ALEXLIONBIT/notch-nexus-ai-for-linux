@@ -13,6 +13,7 @@ DEFAULTS = {
     "host": "127.0.0.1",
     "port": 8765,
     "user_name": "",
+    "auto_mode": False,                  # True = niente conferme (resta il blocco dei comandi distruttivi)
     "browser": "",                       # id .desktop del browser ("" = quello di sistema)                     # come ti chiama il robot (opzionale)
     # cervello
     "ollama_host": "http://127.0.0.1:11434",
@@ -78,7 +79,7 @@ class Config(dict):
 
     def public(self):
         keys = ["model", "wake_word", "wake_threshold", "wake_enabled", "voice", "voice_speed",
-                "robot_strength", "language", "screen_scale", "browser", "provider", "stt_mode", "stt_provider",
+                "robot_strength", "language", "screen_scale", "browser", "auto_mode", "provider", "stt_mode", "stt_provider",
                 "stt_remote_model", "stt_model"]
         from .providers import public as pub
         out = {k: self[k] for k in keys}

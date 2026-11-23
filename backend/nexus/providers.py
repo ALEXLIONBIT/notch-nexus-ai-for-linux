@@ -133,7 +133,7 @@ class OpenAIProvider:
         out = []
         for m in msgs:
             if m["role"] == "assistant":
-                o = {"role": "assistant", "content": m.get("content") or None}
+                o = {"role": "assistant", "content": m.get("content") or ""}
                 if m.get("tool_calls"):
                     o["tool_calls"] = [{"id": c["id"], "type": "function",
                                         "function": {"name": c["name"], "arguments": json.dumps(c["arguments"])}}

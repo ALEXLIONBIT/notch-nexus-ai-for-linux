@@ -148,7 +148,7 @@ class MainActivity : ComponentActivity() {
             Column(m, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (dev.nexus.assistant.core.Updater.latest.isNotEmpty()) UpdateBanner()
                 Helmet(Modifier.fillMaxWidth(if (tablet) .8f else .78f))
-                StatusLine()
+                Row(verticalAlignment = Alignment.CenterVertically) { StatusLine(); Spacer(Modifier.width(10.dp)); ModeChip() }
                 if (Core.sayText.isNotEmpty())
                     Subtitle(th.ink, th.inkSoft.copy(alpha = .4f), TextStyle(fontFamily = FontFamily.Monospace, fontSize = 22.sp,
                         fontWeight = FontWeight.Bold, textAlign = TextAlign.Center), Modifier.padding(horizontal = 16.dp))
@@ -171,7 +171,7 @@ class MainActivity : ComponentActivity() {
         if (tablet) {
             Row(Modifier.fillMaxSize().padding(24.dp).imePadding(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 Box(Modifier.weight(1.1f).fillMaxHeight(), contentAlignment = Alignment.Center) { face(Modifier.fillMaxWidth()) }
-                Column(Modifier.weight(1f).fillMaxHeight()) { chat(Modifier.weight(1f)); Spacer(Modifier.height(12.dp)); AskBar() }
+                Column(Modifier.weight(1f).fillMaxHeight()) { chat(Modifier.weight(1f)); Spacer(Modifier.height(12.dp)); ConfirmBar(); AskBar() }
             }
         } else {
             Column(Modifier.fillMaxSize().padding(16.dp).imePadding()) {
@@ -179,6 +179,7 @@ class MainActivity : ComponentActivity() {
                 Spacer(Modifier.height(12.dp))
                 chat(Modifier.weight(1f))
                 Spacer(Modifier.height(10.dp))
+                ConfirmBar()
                 AskBar()
             }
         }
@@ -218,8 +219,11 @@ class MainActivity : ComponentActivity() {
             Text("Apri impostazioni", color = Look.led, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RoundedCornerShape(50)).background(chipColor())
                     .clickable { startActivity(Intent(Settings.ACTION_SETTINGS)) }.padding(horizontal = 16.dp, vertical = 10.dp))
+            Text("Modalità", color = th.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("Manuale: chiede conferma prima di comandi e azioni importanti. Auto: fa tutto da solo (puoi anche dire “mettiti in automode”).", color = th.inkSoft, fontSize = 13.sp)
+            Chips(listOf("manuale", "auto"), listOf("Manuale", "⚡ Auto"), if (Prefs.autoMode) "auto" else "manuale") { Prefs.autoMode = it == "auto"; Prefs.save() }
             Text("Immagini", color = th.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Text("Server di NEXUS sul PC (Z-Image-Turbo). Se è vuoto usa OpenAI, se è il cervello attivo.", color = th.inkSoft, fontSize = 13.sp)
+            Text("Server di NEXUS sul PC (Z-Image-Turbo). Se è vuoto usa il PC del tuo cervello Ollama, oppure OpenAI.", color = th.inkSoft, fontSize = 13.sp)
             NexusField(Prefs.imageUrl, "Es. http://100.x.y.z:11434") { Prefs.imageUrl = it.trim(); Prefs.save() }
             Text("Aggiornamenti", color = th.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Text("Versione installata: " + dev.nexus.assistant.core.Updater.current(ctx) +

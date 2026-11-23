@@ -69,7 +69,7 @@ class Ears:
                 continue
             self.preroll.append(chunk)
             # rumore di fondo (media lenta)
-            self.noise = 0.98 * self.noise + 0.02 * min(rms, 2000)
+            self.noise = 0.98 * self.noise + 0.02 * min(rms, 20000)
             if self.oww is None or self.muted or not self.cfg["wake_enabled"]:
                 continue
             scores = self.oww.predict(chunk)
@@ -81,12 +81,13 @@ class Ears:
 
     # ---------- registrazione comando ----------
     def _feed_record(self, rec, chunk, rms):
+        """Fine frase: voce = Silero sicuro (>0.6) E più forte del rumore della stanza.
+        Chiude dopo `silence` secondi senza voce, al massimo dopo `max` secondi."""
         rec["buf"].append(chunk)
         now = time.time()
-        if self.vad is not None:            # Silero VAD: capisce la voce, non solo il volume
-            is_voice = self.vad.predict(chunk, frame_size=640) > (0.5 if not rec["speech"] else 0.35)
-        else:
-            is_voice = rms > max(self.noise * 2.5, 350)
+        p = self.vad.predict(chunk, frame_size=640) if self.vad is not None else (1.0 if rms > 400 else 0.0)
+        loud = rms > max(self.noise * 1.8, 300)
+        is_voice = (p > 0.6 and loud) or p > 0.85
         if is_voice:
             rec["voiced"] += 1
             if rec["voiced"] >= 2:              # almeno ~160 ms di voce vera
@@ -108,7 +109,7 @@ class Ears:
             self._rec = None
             rec["done"].set()
 
-    def record(self, wait=4.0, silence=1.1, max_s=25.0):
+    def record(self, wait=4.0, silence=0.7, max_s=15.0):
         """Registra finché l'utente parla. Ritorna int16 array o None se silenzio."""
         pre = list(self.preroll)
         if self.vad is not None:

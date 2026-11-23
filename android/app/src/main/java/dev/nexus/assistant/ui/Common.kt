@@ -122,3 +122,29 @@ fun GeneratedImage(path: String, modifier: Modifier = Modifier) {
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
     }, contentScale = ContentScale.Fit)
 }
+
+
+/** Conferma (modalità manuale): Sì / No. */
+@Composable
+fun ConfirmBar(modifier: Modifier = Modifier) {
+    if (Core.confirmText.isEmpty()) return
+    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0xFFFFC861)).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(Core.confirmText, color = Color(0xFF1A1306), fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Text("Sì", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp)
+            .clip(RoundedCornerShape(50)).background(Color(0xFF1F242B)).clickable { Core.answerConfirm(true) }.padding(horizontal = 16.dp, vertical = 8.dp))
+        Text("No", color = Color(0xFF1A1306), fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 6.dp)
+            .clip(RoundedCornerShape(50)).clickable { Core.answerConfirm(false) }.padding(horizontal = 12.dp, vertical = 8.dp))
+    }
+}
+
+/** Interruttore Automode / Manuale. */
+@Composable
+fun ModeChip(modifier: Modifier = Modifier) {
+    val auto = dev.nexus.assistant.core.Prefs.autoMode
+    Text(if (auto) "⚡ Auto" else "Manuale", fontSize = 13.sp, fontWeight = FontWeight.Bold,
+        color = if (auto) Color(0xFF1A1306) else Look.theme.ink,
+        modifier = modifier.clip(RoundedCornerShape(50)).background(if (auto) Color(0xFFFFC861) else chipColor())
+            .clickable { dev.nexus.assistant.core.Prefs.autoMode = !auto; dev.nexus.assistant.core.Prefs.save() }
+            .padding(horizontal = 14.dp, vertical = 7.dp))
+}

@@ -91,7 +91,7 @@ class Stt:
         if peak > 1e-3:                                   # volume normalizzato: microfoni bassi capiscono meglio
             audio = audio / peak * 0.9
         segs, _ = self.model.transcribe(
-            audio, language=self.cfg["language"], beam_size=5,
+            audio, language=self.cfg["language"], beam_size=3,
             vad_filter=True, condition_on_previous_text=False, no_speech_threshold=0.5,
             initial_prompt=self.prompt())
         text = " ".join(s.text.strip() for s in segs if s.no_speech_prob < 0.7).strip()

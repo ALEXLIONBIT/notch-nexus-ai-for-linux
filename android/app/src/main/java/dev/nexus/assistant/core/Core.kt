@@ -46,7 +46,23 @@ object Core {
     val steps = mutableStateListOf<String>()
     val chat = mutableStateListOf<ChatLine>()
     var hideRequest by mutableIntStateOf(0)
-    var lastImage by mutableStateOf<String?>(null)       // la finestra assistente si fa da parte quando agisce
+    var lastImage by mutableStateOf<String?>(null)
+    var confirmText by mutableStateOf("")
+    private var confirmWait: kotlinx.coroutines.CompletableDeferred<Boolean>? = null
+
+    /** Chiede conferma (in automode risponde sì da sola). */
+    suspend fun confirm(question: String): Boolean {
+        if (Prefs.autoMode) { steps.add("Automode: procedo"); return true }
+        val d = kotlinx.coroutines.CompletableDeferred<Boolean>()
+        confirmWait = d; confirmText = question
+        val ok = kotlinx.coroutines.withTimeoutOrNull(45_000) { d.await() } ?: false
+        confirmText = ""; confirmWait = null
+        return ok
+    }
+    fun answerConfirm(ok: Boolean) { confirmWait?.complete(ok) }
+
+    private var lastPartialAt = 0L
+    private var heardSpeech = false       // la finestra assistente si fa da parte quando agisce
 
     private var tts: TextToSpeech? = null
     private var ttsReady = false
@@ -91,7 +107,7 @@ object Core {
         recognizer = if (comp != null) SpeechRecognizer.createSpeechRecognizer(app, comp) else SpeechRecognizer.createSpeechRecognizer(app)
         recognizer?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(p: Bundle?) { state = "listening"; detail = "Ti ascolto"; transcript = "" }
-            override fun onBeginningOfSpeech() {}
+            override fun onBeginningOfSpeech() { heardSpeech = true; lastPartialAt = System.currentTimeMillis() }
             override fun onRmsChanged(rms: Float) { level = ((rms + 2f) / 12f).coerceIn(0f, 1f) }
             override fun onBufferReceived(b: ByteArray?) {}
             override fun onEndOfSpeech() { level = 0f; state = "thinking"; detail = "Ho capito" }
@@ -100,7 +116,9 @@ object Core {
                 if (state == "listening" || state == "thinking") { state = "idle"; detail = if (err == SpeechRecognizer.ERROR_NO_MATCH || err == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) "Non ho sentito niente" else "Microfono non disponibile ($err)" }
             }
             override fun onPartialResults(b: Bundle?) {
-                b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let { transcript = it }
+                b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let {
+                    if (it != transcript) { transcript = it; lastPartialAt = System.currentTimeMillis(); heardSpeech = true }
+                }
             }
             override fun onResults(b: Bundle?) {
                 val text = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
@@ -113,8 +131,20 @@ object Core {
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "it-IT")
             .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1100L)
+            .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 700L)
+            .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 600L)
+        heardSpeech = false; lastPartialAt = System.currentTimeMillis()
         recognizer?.startListening(intent)
+        // sicurezza: Google a volte continua ad ascoltare il rumore; chiudiamo noi
+        val myRec = recognizer
+        scope.launch {
+            val t0 = System.currentTimeMillis()
+            while (state == "listening" && recognizer === myRec) {
+                delay(200)
+                val now = System.currentTimeMillis()
+                if ((heardSpeech && now - lastPartialAt > 1200) || now - t0 > 15_000) { myRec?.stopListening(); break }
+            }
+        }
     }
 
     fun stopAll() {
@@ -151,6 +181,8 @@ object Core {
 Parli SEMPRE in italiano. Le risposte vengono lette a voce: massimo 2 frasi brevi, niente elenchi, niente markdown, niente emoji.
 Usa i tool per agire DAVVERO sul telefono invece di spiegare come fare. Non rispondere mai "non posso": trova un modo.
 - App: open_app. Siti: open_url, web_search, youtube. Sveglie e timer: set_alarm, set_timer.
+- Terminale: run_shell esegue comandi della shell Android (getprop, ls, ping, date, settings get…).
+- Modalità: set_mode('auto') per non chiedere conferme, set_mode('manuale') per chiederle.
 - Immagini: generate_image con un prompt dettagliato IN INGLESE (soggetto, stile, luce, inquadratura).
 - Messaggi e chiamate: send_sms, whatsapp, dial (prepari tu, l'utente preme invia/chiama).
 - Dentro le app: read_screen per sapere cosa c'è, poi tap_text o tap, type_text, scroll, system_button. Controlla con read_screen dopo.
@@ -167,6 +199,7 @@ Non dire mai di aver fatto qualcosa se non hai chiamato il tool. Data e ora: $no
 
     fun ask(text: String) {
         job?.cancel(); cancelled = false
+        quickCommand(text)?.let { r -> chat.add(ChatLine(true, text)); chat.add(ChatLine(false, r)); reply = r; transcript = text; speak(r); return }
         transcript = text; reply = ""; steps.clear(); happy = false; lastImage = null
         chat.add(ChatLine(true, text))
         state = "thinking"; detail = "Ci penso"
@@ -181,12 +214,24 @@ Non dire mai di aver fatto qualcosa se non hai chiamato il tool. Data e ora: $no
         }
     }
 
+    /** Comandi istantanei: automode / manuale. */
+    private fun quickCommand(text: String): String? {
+        val t = text.lowercase()
+        when {
+            Regex("auto ?mode|modalit[aà] auto|automatic").containsMatchIn(t) -> Prefs.autoMode = true
+            Regex("manual").containsMatchIn(t) && t.length < 60 -> Prefs.autoMode = false
+            else -> return null
+        }
+        Prefs.save()
+        return if (Prefs.autoMode) "Automode attivo: faccio tutto senza chiederti conferma." else "Modalità manuale: ti chiederò conferma prima delle cose importanti."
+    }
+
     private suspend fun runAgent(text: String): String {
         val p = Prefs.active() ?: return "Prima aggiungi un cervello: apri NEXUS, scheda Cervello."
         if (System.currentTimeMillis() - lastTurn > 5 * 60_000) history.clear()
         lastTurn = System.currentTimeMillis()
         val tools = Tools(app, onStep = { s -> scope.launch { steps.add(s); state = "acting"; detail = s } },
-            hideUi = { scope.launch { hideRequest++ } }, onImage = { path -> scope.launch { lastImage = path } })
+            hideUi = { scope.launch { hideRequest++ } }, onImage = { path -> lastImage = path }, confirm = { q -> confirm(q) })
         val msgs = mutableListOf(Msg("system", systemPrompt())).apply { addAll(history); add(Msg("user", text)) }
         val seen = HashMap<String, Int>()
         var reply = ""

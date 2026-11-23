@@ -146,6 +146,19 @@ class Nexus:
         if self.state == "idle":
             self.set_state("idle", self._idle_text())
 
+    def quick_command(self, text):
+        t = text.lower()
+        if re.search(r"auto ?mode|modalit[aà] auto|automatic", t):
+            self.cfg["auto_mode"] = True
+        elif re.search(r"manual|modalit[aà] manual", t) and len(t) < 60:
+            self.cfg["auto_mode"] = False
+        else:
+            return None
+        self.cfg.save()
+        self.bus.emit("config", config=self.cfg.public())
+        return "Automode attivo: faccio tutto senza chiederti conferma." if self.cfg["auto_mode"] \
+            else "Modalità manuale: ti chiederò conferma prima delle cose importanti."
+
     # ---------- aggiornamenti (git) ----------
     def _git(self, *args, timeout=60):
         from .config import ROOT
@@ -273,6 +286,10 @@ class Nexus:
                     if not text or self.stopped:
                         break
                 self.bus.emit("transcript", text=text)
+                quick = self.quick_command(text)
+                if quick:                              # comandi istantanei, senza passare dal cervello
+                    self.bus.emit("reply", text=quick); self.set_state("speaking", ""); self.voice.speak(quick)
+                    break
                 self.set_state("thinking", "Penso…")
                 t0 = time.time()
                 reply = self.brain.run(text)
@@ -301,6 +318,9 @@ class Nexus:
             self.busy.release()
 
     def confirm(self, question):
+        if self.cfg.get("auto_mode"):                       # automode: niente domande
+            self.bus.emit("step", icon="⚡", text="Automode: procedo")
+            return True
         cid = uuid.uuid4().hex[:8]
         p = {"ev": threading.Event(), "ok": False}
         self.pending[cid] = p
