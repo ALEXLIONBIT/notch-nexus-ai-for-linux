@@ -3,6 +3,8 @@ name: NEXUS per Windows
 on:
   push:
     tags: ["windows-v*"]
+    branches: ["windows-wear"]
+    paths: ["backend/**", "ui/**", "windows/**", ".github/workflows/windows.yml"]
   workflow_dispatch:
 
 permissions:
