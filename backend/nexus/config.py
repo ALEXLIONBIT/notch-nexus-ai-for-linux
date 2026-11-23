@@ -3,10 +3,23 @@ import json
 import threading
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]          # ~/nexus
-DATA = Path.home() / ".local/share/nexus"
-CACHE = Path.home() / ".cache/nexus"
-CONFIG_FILE = ROOT / "config.json"
+import os
+
+from .osys import IS_WIN
+
+import sys
+
+# ~/nexus; nell'app Windows impacchettata: la cartella dei file inclusi (voci, interfaccia)
+ROOT = Path(getattr(sys, "_MEIPASS", "")) if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[2]
+if IS_WIN:
+    # la cartella del programma non è scrivibile: dati in %LOCALAPPDATA%, impostazioni in %APPDATA%
+    DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData/Local") / "NEXUS"
+    CACHE = DATA / "cache"
+    CONFIG_FILE = Path(os.environ.get("APPDATA") or Path.home() / "AppData/Roaming") / "NEXUS" / "config.json"
+else:
+    DATA = Path.home() / ".local/share/nexus"
+    CACHE = Path.home() / ".cache/nexus"
+    CONFIG_FILE = ROOT / "config.json"
 VOICES_DIR = DATA / "voices"
 
 DEFAULTS = {
@@ -44,6 +57,10 @@ DEFAULTS = {
     "safe_shell_prefixes": ["ls", "df", "free", "uptime", "whoami", "date", "cat ", "pwd",
                             "nvidia-smi", "uname", "ps ", "du "],
 }
+if IS_WIN:
+    DEFAULTS["safe_shell_prefixes"] = ["Get-", "dir", "ls", "whoami", "hostname", "systeminfo", "ipconfig",
+                                       "nvidia-smi", "pwd", "type ", "cat ", "echo "]
+    DEFAULTS["setup_done"] = False       # primo avvio: scegliere dove gira il cervello
 
 _lock = threading.Lock()
 
@@ -53,10 +70,10 @@ class Config(dict):
         super().__init__(DEFAULTS)
         if CONFIG_FILE.exists():
             try:
-                self.update(json.loads(CONFIG_FILE.read_text()))
+                self.update(json.loads(CONFIG_FILE.read_text(encoding="utf-8")))
             except Exception as e:  # file rotto → default
                 print("config.json non valido:", e)
-        for d in (DATA, CACHE, VOICES_DIR):
+        for d in (DATA, CACHE, VOICES_DIR, CONFIG_FILE.parent):
             d.mkdir(parents=True, exist_ok=True)
         if not self["providers"]:                      # migrazione: il vecchio setup diventa il provider "local"
             from .providers import DEFAULT_PROVIDER
@@ -75,12 +92,12 @@ class Config(dict):
 
     def save(self):
         with _lock:
-            CONFIG_FILE.write_text(json.dumps(dict(self), indent=2, ensure_ascii=False))
+            CONFIG_FILE.write_text(json.dumps(dict(self), indent=2, ensure_ascii=False), encoding="utf-8")
 
     def public(self):
         keys = ["model", "wake_word", "wake_threshold", "wake_enabled", "voice", "voice_speed",
                 "robot_strength", "language", "screen_scale", "browser", "auto_mode", "provider", "stt_mode", "stt_provider",
-                "stt_remote_model", "stt_model"]
+                "stt_remote_model", "stt_model"] + (["setup_done"] if IS_WIN else [])
         from .providers import public as pub
         out = {k: self[k] for k in keys}
         out["providers"] = [pub(p) for p in self["providers"]]

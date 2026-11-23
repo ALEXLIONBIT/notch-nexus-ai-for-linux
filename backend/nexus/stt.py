@@ -19,7 +19,7 @@ def _preload_cuda_libs():
         if not spec or not spec.submodule_search_locations:
             continue
         for loc in spec.submodule_search_locations:
-            for lib in sorted(glob.glob(os.path.join(loc, "lib", "lib*.so*"))):
+            for lib in sorted(glob.glob(os.path.join(loc, "lib", "lib*.so*")) + glob.glob(os.path.join(loc, "bin", "*.dll"))):
                 try:
                     ctypes.CDLL(lib, mode=ctypes.RTLD_GLOBAL)
                 except OSError:
@@ -45,7 +45,10 @@ class Stt:
         cfg = self.cfg
         name = cfg["stt_model"]
         self.model = None
-        if cfg.get("stt_device", "auto") in ("auto", "cuda"):
+        from .osys import IS_WIN
+        # Windows: la GPU solo se scelta apposta (senza le DLL di cuDNN ctranslate2 chiude il programma)
+        want = cfg.get("stt_device", "auto")
+        if (want == "cuda") or (want == "auto" and not IS_WIN):
             try:
                 _preload_cuda_libs()
                 self.model = WhisperModel(name, device="cuda", compute_type="int8_float16")

@@ -10,6 +10,7 @@ import time
 
 from . import tool
 from .screen import screenshot, ocr, find_text
+from ..osys import IS_WIN
 
 APP_ID = "org.gnome.NetworkDisplays"
 SERVICES = {"_display._tcp": "Miracast", "_googlecast._tcp": "Chromecast", "_airplay._tcp": "AirPlay"}
@@ -19,8 +20,44 @@ def _unescape(s):
     return re.sub(r"\\(\d{3})", lambda m: chr(int(m.group(1))), s)
 
 
+def _discover_zeroconf(timeout=6):
+    """Windows (niente avahi): mDNS con la libreria zeroconf."""
+    from zeroconf import ServiceBrowser, Zeroconf
+    found = {}
+
+    class L:
+        def add_service(self, zc, type_, name):
+            info = zc.get_service_info(type_, name, 2000)
+            kind = SERVICES.get(type_.replace(".local.", ""))
+            if not info or not kind:
+                return
+            label = name.replace("." + type_, "")
+            if info.properties:                          # i Chromecast hanno il nome vero nel campo "fn"
+                fn = info.properties.get(b"fn")
+                label = fn.decode("utf-8", "replace") if fn else label
+            if kind == "Chromecast" and any(x in label for x in ("Nest Mini", "Nest-Mini", "Cast-Group", "Nest Hub")):
+                return
+            ips = info.parsed_addresses()
+            found[(label, kind)] = {"name": label, "kind": kind, "ip": ips[0] if ips else ""}
+
+        def update_service(self, *a):
+            pass
+
+        def remove_service(self, *a):
+            pass
+    zc = Zeroconf()
+    try:
+        ServiceBrowser(zc, [t + ".local." for t in SERVICES], L())
+        time.sleep(timeout)
+    finally:
+        zc.close()
+    return sorted(found.values(), key=lambda d: d["name"].lower())
+
+
 def discover(timeout=6):
     """[{name, kind, ip}] dei dispositivi sulla rete locale."""
+    if IS_WIN:
+        return _discover_zeroconf(timeout)
     try:
         out = subprocess.run(["avahi-browse", "-arkt", "-p"], capture_output=True, text=True, timeout=timeout + 2).stdout
     except subprocess.TimeoutExpired as e:
@@ -36,6 +73,28 @@ def discover(timeout=6):
         key = (name, SERVICES[p[4]])
         found[key] = {"name": name, "kind": SERVICES[p[4]], "ip": p[7]}
     return sorted(found.values(), key=lambda d: d["name"].lower())
+
+
+def _cast_windows(ctx, target):
+    """Windows ha Miracast integrato: Win+K apre 'Trasmetti', poi si clicca la TV per nome."""
+    from . import inputs
+    from PIL import Image
+    inputs.press("win+k")
+    t0 = time.time()
+    while time.time() - t0 < 25:
+        time.sleep(1.5)
+        shot = screenshot()
+        inputs._size = Image.open(shot).size
+        pos, _ = find_text(ocr(shot), target)
+        if pos:
+            x, y = inputs.to_norm(pos[0], pos[1])
+            inputs.move(x, y)
+            inputs.click_btn("left")
+            ctx.step("📺", f"Mi collego a {pos[2]}")
+            return f"Ho avviato la trasmissione dello schermo su {pos[2]} (Miracast di Windows)."
+    inputs.press("esc")
+    return (f"Non vedo '{target}' nel pannello Trasmetti di Windows. Su Windows lo schermo si trasmette solo "
+            "alle TV Miracast (le Chromecast funzionano solo da Chrome: menu ⋮ → Trasmetti).")
 
 
 @tool("list_tvs", "Cerca le TV e i dispositivi a cui si può trasmettere lo schermo (Miracast, Chromecast, AirPlay).")
@@ -56,6 +115,8 @@ def cast_screen(ctx, tv):
     match = difflib.get_close_matches(tv, names, n=1, cutoff=0.3) or [n for n in names if tv.lower() in n.lower()]
     target = match[0] if match else tv
     ctx.step("📺", f"Preparo lo streaming verso {target}")
+    if IS_WIN:
+        return _cast_windows(ctx, target)
     import shutil
     has_flatpak = shutil.which("flatpak") and subprocess.run(["flatpak", "info", APP_ID], capture_output=True).returncode == 0
     if has_flatpak:
@@ -106,6 +167,22 @@ def cast_screen(ctx, tv):
 @tool("stop_cast", "Ferma la trasmissione dello schermo sulla TV.")
 def stop_cast(ctx):
     ctx.step("📺", "Fermo lo streaming")
+    if IS_WIN:
+        from . import inputs
+        from PIL import Image
+        inputs.press("win+k")
+        time.sleep(2)
+        shot = screenshot()
+        inputs._size = Image.open(shot).size
+        pos, _ = find_text(ocr(shot), "Disconnetti")
+        if not pos:
+            pos, _ = find_text(ocr(shot), "Disconnect")
+        if pos:
+            inputs.move(*inputs.to_norm(pos[0], pos[1]))
+            inputs.click_btn("left")
+            return "Ho fermato la trasmissione."
+        inputs.press("esc")
+        return "Non vedo nessuna trasmissione attiva."
     subprocess.run(["flatpak", "kill", APP_ID], capture_output=True, timeout=10)
     subprocess.run(["pkill", "-f", "gnome-network-displays"], capture_output=True, timeout=10)
     return "Ho fermato la trasmissione."

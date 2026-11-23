@@ -1,104 +1,112 @@
-"""Mouse e tastiera su Wayland con dispositivi virtuali uinput (python-evdev).
+"""Mouse e tastiera.
 
-Il mouse è una "tavoletta" a coordinate assolute: punta esattamente dove serve,
-senza accelerazione e con qualsiasi scala di KDE. Coordinate dei tool: 0-1000
-rispetto allo screenshot (0,0 = alto a sinistra, 1000,1000 = basso a destra).
-Il testo passa dagli appunti (wl-copy + Ctrl+V) così gli accenti funzionano con la tastiera italiana.
+Linux (Wayland/X11): dispositivi virtuali uinput (python-evdev). Il mouse è una "tavoletta" a coordinate
+assolute: punta esattamente dove serve, senza accelerazione e con qualsiasi scala di KDE.
+Windows: SendInput (vedi _win_input.py).
+Coordinate dei tool: 0-1000 rispetto allo screenshot (0,0 = alto a sinistra, 1000,1000 = basso a destra).
+Il testo su Linux passa dagli appunti (wl-copy + Ctrl+V) così gli accenti funzionano con la tastiera italiana;
+su Windows si scrive direttamente in Unicode.
 """
 import subprocess
 import threading
 import time
 
-from evdev import UInput, AbsInfo, ecodes as e
-
 from . import tool
 from .screen import screenshot, ocr, find_text
+from ..osys import IS_WIN
 
-_lock = threading.Lock()
-_mouse = _kbd = None
 _size = (3840, 2400)        # aggiornato a ogni screenshot
 
-KEYS = {
-    "ctrl": e.KEY_LEFTCTRL, "control": e.KEY_LEFTCTRL, "shift": e.KEY_LEFTSHIFT, "alt": e.KEY_LEFTALT,
-    "altgr": e.KEY_RIGHTALT, "super": e.KEY_LEFTMETA, "meta": e.KEY_LEFTMETA, "win": e.KEY_LEFTMETA,
-    "enter": e.KEY_ENTER, "invio": e.KEY_ENTER, "esc": e.KEY_ESC, "escape": e.KEY_ESC, "tab": e.KEY_TAB,
-    "space": e.KEY_SPACE, "spazio": e.KEY_SPACE, "backspace": e.KEY_BACKSPACE, "delete": e.KEY_DELETE,
-    "canc": e.KEY_DELETE, "up": e.KEY_UP, "su": e.KEY_UP, "down": e.KEY_DOWN, "giu": e.KEY_DOWN,
-    "left": e.KEY_LEFT, "sinistra": e.KEY_LEFT, "right": e.KEY_RIGHT, "destra": e.KEY_RIGHT,
-    "home": e.KEY_HOME, "end": e.KEY_END, "pageup": e.KEY_PAGEUP, "pagedown": e.KEY_PAGEDOWN,
-    "printscreen": e.KEY_SYSRQ, "volumeup": e.KEY_VOLUMEUP, "volumedown": e.KEY_VOLUMEDOWN,
-    "mute": e.KEY_MUTE, "playpause": e.KEY_PLAYPAUSE,
-    **{f"f{i}": getattr(e, f"KEY_F{i}") for i in range(1, 13)},
-    **{c: getattr(e, f"KEY_{c.upper()}") for c in "abcdefghijklmnopqrstuvwxyz0123456789"},
-}
-BUTTONS = {"left": e.BTN_LEFT, "sinistro": e.BTN_LEFT, "right": e.BTN_RIGHT, "destro": e.BTN_RIGHT,
-           "middle": e.BTN_MIDDLE, "centrale": e.BTN_MIDDLE}
+if IS_WIN:
+    from ._win_input import move, button, click_btn, wheel, press, copy_to_clipboard, type_unicode  # noqa: F401
+else:
+    from evdev import UInput, AbsInfo, ecodes as e
 
+    _lock = threading.Lock()
+    _mouse = _kbd = None
 
-def _devices():
-    global _mouse, _kbd
-    with _lock:
-        if _mouse is None:
-            _mouse = UInput({
-                e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE],
-                e.EV_ABS: [(e.ABS_X, AbsInfo(0, 0, 65535, 0, 0, 0)), (e.ABS_Y, AbsInfo(0, 0, 65535, 0, 0, 0))],
-                e.EV_REL: [e.REL_WHEEL, e.REL_HWHEEL],
-            }, name="nexus-pointer", vendor=0x627, product=0x1, version=1)
-            _kbd = UInput({e.EV_KEY: sorted(set(KEYS.values()))}, name="nexus-keyboard")
-            time.sleep(0.8)      # il compositor deve "vedere" i nuovi dispositivi
-    return _mouse, _kbd
+    KEYS = {
+        "ctrl": e.KEY_LEFTCTRL, "control": e.KEY_LEFTCTRL, "shift": e.KEY_LEFTSHIFT, "alt": e.KEY_LEFTALT,
+        "altgr": e.KEY_RIGHTALT, "super": e.KEY_LEFTMETA, "meta": e.KEY_LEFTMETA, "win": e.KEY_LEFTMETA,
+        "enter": e.KEY_ENTER, "invio": e.KEY_ENTER, "esc": e.KEY_ESC, "escape": e.KEY_ESC, "tab": e.KEY_TAB,
+        "space": e.KEY_SPACE, "spazio": e.KEY_SPACE, "backspace": e.KEY_BACKSPACE, "delete": e.KEY_DELETE,
+        "canc": e.KEY_DELETE, "up": e.KEY_UP, "su": e.KEY_UP, "down": e.KEY_DOWN, "giu": e.KEY_DOWN,
+        "left": e.KEY_LEFT, "sinistra": e.KEY_LEFT, "right": e.KEY_RIGHT, "destra": e.KEY_RIGHT,
+        "home": e.KEY_HOME, "end": e.KEY_END, "pageup": e.KEY_PAGEUP, "pagedown": e.KEY_PAGEDOWN,
+        "printscreen": e.KEY_SYSRQ, "volumeup": e.KEY_VOLUMEUP, "volumedown": e.KEY_VOLUMEDOWN,
+        "mute": e.KEY_MUTE, "playpause": e.KEY_PLAYPAUSE, "nextsong": e.KEY_NEXTSONG,
+        "previoussong": e.KEY_PREVIOUSSONG,
+        **{f"f{i}": getattr(e, f"KEY_F{i}") for i in range(1, 13)},
+        **{c: getattr(e, f"KEY_{c.upper()}") for c in "abcdefghijklmnopqrstuvwxyz0123456789"},
+    }
+    BUTTONS = {"left": e.BTN_LEFT, "sinistro": e.BTN_LEFT, "right": e.BTN_RIGHT, "destro": e.BTN_RIGHT,
+               "middle": e.BTN_MIDDLE, "centrale": e.BTN_MIDDLE}
 
+    def _devices():
+        global _mouse, _kbd
+        with _lock:
+            if _mouse is None:
+                _mouse = UInput({
+                    e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE],
+                    e.EV_ABS: [(e.ABS_X, AbsInfo(0, 0, 65535, 0, 0, 0)), (e.ABS_Y, AbsInfo(0, 0, 65535, 0, 0, 0))],
+                    e.EV_REL: [e.REL_WHEEL, e.REL_HWHEEL],
+                }, name="nexus-pointer", vendor=0x627, product=0x1, version=1)
+                _kbd = UInput({e.EV_KEY: sorted(set(KEYS.values()))}, name="nexus-keyboard")
+                time.sleep(0.8)      # il compositor deve "vedere" i nuovi dispositivi
+        return _mouse, _kbd
 
-def _norm(v):
-    return max(0, min(1000, float(v))) / 1000 * 65535
+    def _norm(v):
+        return max(0, min(1000, float(v))) / 1000 * 65535
 
+    def move(x, y):
+        m, _ = _devices()
+        m.write(e.EV_ABS, e.ABS_X, int(_norm(x)))
+        m.write(e.EV_ABS, e.ABS_Y, int(_norm(y)))
+        m.syn()
+        time.sleep(0.05)
 
-def move(x, y):
-    m, _ = _devices()
-    m.write(e.EV_ABS, e.ABS_X, int(_norm(x)))
-    m.write(e.EV_ABS, e.ABS_Y, int(_norm(y)))
-    m.syn()
-    time.sleep(0.05)
+    def button(name="left", down=True):
+        m, _ = _devices()
+        m.write(e.EV_KEY, BUTTONS.get(name, e.BTN_LEFT), 1 if down else 0); m.syn()
 
+    def click_btn(button_name="left", count=1):
+        for _ in range(count):
+            button(button_name, True); time.sleep(0.03)
+            button(button_name, False); time.sleep(0.07)
 
-def click_btn(button="left", count=1):
-    m, _ = _devices()
-    b = BUTTONS.get(button, e.BTN_LEFT)
-    for _ in range(count):
-        m.write(e.EV_KEY, b, 1); m.syn(); time.sleep(0.03)
-        m.write(e.EV_KEY, b, 0); m.syn(); time.sleep(0.07)
+    def wheel(horizontal, sign):
+        m, _ = _devices()
+        m.write(e.EV_REL, e.REL_HWHEEL if horizontal else e.REL_WHEEL, sign); m.syn()
 
+    def press(combo):
+        _, k = _devices()
+        codes = []
+        for name in combo.lower().replace(" ", "").split("+"):
+            if name not in KEYS:
+                raise ValueError(f"tasto sconosciuto: {name}")
+            codes.append(KEYS[name])
+        for c in codes:
+            k.write(e.EV_KEY, c, 1); k.syn(); time.sleep(0.02)
+        for c in reversed(codes):
+            k.write(e.EV_KEY, c, 0); k.syn(); time.sleep(0.02)
 
-def press(combo):
-    _, k = _devices()
-    codes = []
-    for name in combo.lower().replace(" ", "").split("+"):
-        if name not in KEYS:
-            raise ValueError(f"tasto sconosciuto: {name}")
-        codes.append(KEYS[name])
-    for c in codes:
-        k.write(e.EV_KEY, c, 1); k.syn(); time.sleep(0.02)
-    for c in reversed(codes):
-        k.write(e.EV_KEY, c, 0); k.syn(); time.sleep(0.02)
+    def copy_to_clipboard(text):
+        """Wayland: wl-copy; X11 (es. Linux Mint): xclip o xsel."""
+        import os
+        import shutil
+        if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-copy"):
+            subprocess.run(["wl-copy", "--", text], timeout=5)
+        elif shutil.which("xclip"):
+            subprocess.run(["xclip", "-selection", "clipboard"], input=text, text=True, timeout=5)
+        elif shutil.which("xsel"):
+            subprocess.run(["xsel", "-b", "-i"], input=text, text=True, timeout=5)
+        else:
+            raise RuntimeError("installa wl-clipboard (Wayland) oppure xclip (X11) per scrivere testo")
 
 
 def to_norm(px, py):
     """pixel dello screenshot → 0-1000"""
     return px / _size[0] * 1000, py / _size[1] * 1000
-
-
-def copy_to_clipboard(text):
-    """Wayland: wl-copy; X11 (es. Linux Mint): xclip o xsel."""
-    import os
-    import shutil
-    if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-copy"):
-        subprocess.run(["wl-copy", "--", text], timeout=5)
-    elif shutil.which("xclip"):
-        subprocess.run(["xclip", "-selection", "clipboard"], input=text, text=True, timeout=5)
-    elif shutil.which("xsel"):
-        subprocess.run(["xsel", "-b", "-i"], input=text, text=True, timeout=5)
-    else:
-        raise RuntimeError("installa wl-clipboard (Wayland) oppure xclip (X11) per scrivere testo")
 
 
 # ------------------------------------------------------------------ tool
@@ -148,13 +156,12 @@ def move_mouse(ctx, x, y):
       ["x1", "y1", "x2", "y2"])
 def drag(ctx, x1, y1, x2, y2):
     ctx.step("🖱️", "Trascino")
-    m, _ = _devices()
     move(x1, y1)
-    m.write(e.EV_KEY, e.BTN_LEFT, 1); m.syn(); time.sleep(0.1)
+    button("left", True); time.sleep(0.1)
     for i in range(1, 21):
         move(x1 + (x2 - x1) * i / 20, y1 + (y2 - y1) * i / 20)
         time.sleep(0.015)
-    m.write(e.EV_KEY, e.BTN_LEFT, 0); m.syn()
+    button("left", False)
     return "Trascinato."
 
 
@@ -163,11 +170,10 @@ def drag(ctx, x1, y1, x2, y2):
        "amount": {"type": "integer", "description": "quanti scatti, default 5"}}, ["direction"])
 def scroll(ctx, direction, amount=5):
     ctx.step("🖱️", f"Scorro {direction}")
-    m, _ = _devices()
-    axis = e.REL_HWHEEL if direction in ("sinistra", "destra") else e.REL_WHEEL
+    horizontal = direction in ("sinistra", "destra")
     sign = 1 if direction in ("su", "destra") else -1
     for _ in range(max(1, min(30, int(amount)))):
-        m.write(e.EV_REL, axis, sign); m.syn(); time.sleep(0.03)
+        wheel(horizontal, sign); time.sleep(0.03)
     return "Fatto."
 
 
@@ -185,9 +191,12 @@ def press_keys(ctx, combo):
        "terminal": {"type": "boolean", "description": "true se stai scrivendo in un terminale"}}, ["text"])
 def type_text(ctx, text, enter=False, terminal=False):
     ctx.step("⌨️", f"Scrivo “{text[:40]}”")
-    copy_to_clipboard(text)
-    time.sleep(0.2)
-    press("ctrl+shift+v" if terminal else "ctrl+v")
+    if IS_WIN:
+        type_unicode(text)
+    else:
+        copy_to_clipboard(text)
+        time.sleep(0.2)
+        press("ctrl+shift+v" if terminal else "ctrl+v")
     if enter:
         time.sleep(0.15)
         press("enter")

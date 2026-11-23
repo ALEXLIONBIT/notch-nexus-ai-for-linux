@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(os.environ.get("NEXUS_UI_DIR") or Path(__file__).resolve().parent)
 LAYER_QML = Path("/usr/lib/qt6/qml/org/kde/layershell")
 USE_LAYER = os.environ.get("XDG_SESSION_TYPE") == "wayland" and LAYER_QML.exists() \
     and os.environ.get("NEXUS_NO_LAYERSHELL") != "1"
@@ -65,7 +65,7 @@ class Bridge(QObject):
 
 
 def main():
-    app = QGuiApplication(sys.argv)
+    app = QGuiApplication.instance() or QGuiApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setOrganizationName("nexus")
     app.setApplicationName("nexus-ui")

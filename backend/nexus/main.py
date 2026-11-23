@@ -9,6 +9,9 @@ import uuid
 
 from .config import Config
 from .bus import Bus
+from .osys import IS_WIN, FROZEN
+
+RELEASES = "https://api.github.com/repos/ALEXLIONBIT/notch-nexus-ai-for-linux/releases"
 
 YES = re.compile(r"\b(s[iì]|ok|okay|certo|vai|procedi|conferm|fallo|esatto|d'accordo)\b", re.I)
 NO = re.compile(r"\b(no|annulla|ferma|stop|lascia|non farlo|aspetta)\b", re.I)
@@ -63,7 +66,8 @@ class Nexus:
         threading.Thread(target=self.update_check, daemon=True).start()
         self.set_state("idle", self._idle_text())
         print("NEXUS pronto.")
-        threading.Event().wait()
+        if not FROZEN or not IS_WIN:
+            threading.Event().wait()          # nell'app Windows il backend gira in un thread e la UI tiene vivo il processo
 
     def _idle_text(self):
         w = self.cfg["wake_word"].replace("_", " ").title()
@@ -74,6 +78,9 @@ class Nexus:
         self.bus.emit("state", state=state, detail=detail)
 
     def on_connect(self):
+        if IS_WIN:
+            from . import __version__
+            self.bus.emit("platform", os="windows", version=__version__)
         from .tools.apps import list_browsers
         from .providers import PRESETS
         self.bus.emit("browsers", list=list_browsers())
@@ -109,6 +116,8 @@ class Nexus:
             threading.Thread(target=self.update_check, daemon=True).start()
         elif t == "update_apply":
             threading.Thread(target=self.update_apply, daemon=True).start()
+        elif t == "setup_choice":
+            threading.Thread(target=self.setup_choice, args=(msg.get("choice"),), daemon=True).start()
         elif t in ("provider_save", "provider_delete", "provider_models", "provider_test"):
             threading.Thread(target=self.provider_command, args=(t, msg), daemon=True).start()
 
@@ -159,12 +168,91 @@ class Nexus:
         return "Automode attivo: faccio tutto senza chiederti conferma." if self.cfg["auto_mode"] \
             else "Modalità manuale: ti chiederò conferma prima delle cose importanti."
 
-    # ---------- aggiornamenti (git) ----------
+    # ---------- primo avvio su Windows: dove gira il cervello ----------
+    def setup_choice(self, choice):
+        """'local' = installa Ollama (winget) e scarica un modello adatto al PC; 'provider' = lo sceglie l'utente."""
+        def status(text, pct=-1, done=False, error=""):
+            self.bus.emit("setup_status", text=text, pct=pct, done=done, error=error)
+        if choice != "local":
+            self.cfg["setup_done"] = True
+            self.cfg.save()
+            self.bus.emit("config", config=self.cfg.public())
+            status("", done=True)
+            return
+        try:
+            from . import winsetup
+            model = winsetup.install_local_brain(status)
+            p = self.cfg.get_provider("local")
+            if p is None:
+                from .providers import DEFAULT_PROVIDER
+                p = dict(DEFAULT_PROVIDER)
+                self.cfg["providers"].append(p)
+            p["model"] = model
+            self.cfg["provider"] = "local"
+            self.cfg["setup_done"] = True
+            self.cfg.save()
+            self.bus.emit("config", config=self.cfg.public())
+            status(f"Fatto! Il cervello {model} gira su questo PC.", 100, done=True)
+        except Exception as e:
+            traceback.print_exc()
+            status("", error=str(e)[:200])
+
+    # ---------- aggiornamenti (git su Linux, release GitHub su Windows) ----------
+    def _win_latest(self):
+        import urllib.request
+        req = urllib.request.Request(RELEASES + "?per_page=30", headers={"User-Agent": "nexus-assistant"})
+        rels = json.loads(urllib.request.urlopen(req, timeout=20).read())
+        rels = [r for r in rels if r.get("tag_name", "").startswith("windows-v") and not r.get("draft")]
+        return rels[0] if rels else None
+
+    def _win_update_check(self):
+        from . import __version__
+
+        def ver(v):
+            return tuple(int(x) if x.isdigit() else 0 for x in v.split("."))
+        try:
+            r = self._win_latest()
+            latest = r["tag_name"].removeprefix("windows-v") if r else __version__
+            newer = ver(latest) > ver(__version__)
+            news = [l.strip("-* ").strip() for l in (r.get("body") or "").splitlines() if l.strip().startswith(("-", "*"))][:6] if newer else []
+            self.bus.emit("update_status", current=__version__, behind=1 if newer else 0,
+                          news=[f"Versione {latest}"] + ["• " + n for n in news] if newer else [], error="")
+        except Exception as e:
+            self.bus.emit("update_status", current=__version__, behind=0, news=[], error=str(e)[:160])
+
+    def _win_update_apply(self):
+        """Scarica l'installer nuovo, lo avvia in silenzio e chiude NEXUS (l'installer lo riapre)."""
+        import os
+        import urllib.request
+        from .config import CACHE
+        self.bus.emit("update_status", current="", behind=0, news=[], error="", working=True)
+        try:
+            r = self._win_latest()
+            asset = next(a for a in r["assets"] if a["name"].lower().endswith(".exe"))
+            dest = CACHE / asset["name"]
+            req = urllib.request.Request(asset["browser_download_url"], headers={"User-Agent": "nexus-assistant"})
+            with urllib.request.urlopen(req, timeout=60) as src, open(dest, "wb") as f:
+                while True:
+                    b = src.read(1 << 20)
+                    if not b:
+                        break
+                    f.write(b)
+        except Exception as e:
+            self.bus.emit("update_status", current="", behind=0, news=[], error="download: " + str(e)[:150])
+            return
+        self.bus.emit("update_status", current="", behind=0, news=[], error="", restarting=True)
+        subprocess.Popen(f'cmd /c timeout /t 2 /nobreak >nul & "{dest}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART',
+                         creationflags=0x08000000, close_fds=True)
+        time.sleep(0.5)
+        os._exit(0)
+
     def _git(self, *args, timeout=60):
         from .config import ROOT
         return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, timeout=timeout)
 
     def update_check(self):
+        if IS_WIN:
+            return self._win_update_check()
         try:
             cur = self._git("log", "-1", "--format=%h · %cd", "--date=format:%d/%m/%Y %H:%M").stdout.strip()
             f = self._git("fetch", "-q", "origin")
@@ -177,6 +265,8 @@ class Nexus:
             self.bus.emit("update_status", current="", behind=0, news=[], error=str(e)[:160])
 
     def update_apply(self):
+        if IS_WIN:
+            return self._win_update_apply()
         from .config import ROOT
         self.bus.emit("update_status", current="", behind=0, news=[], error="", working=True)
         old_req = (ROOT / "backend/requirements.txt").read_text()

@@ -27,6 +27,22 @@ QtObject {
         onClosing: close => { close.accepted = false; root.store.fullscreen = false }
     }
 
+    // primo avvio su Windows: scegli dove gira il cervello
+    property Window setupWin: Window {
+        id: setupWin
+        color: "transparent"
+        flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        title: "NEXUS"
+        width: setupBox.implicitWidth
+        height: setupBox.implicitHeight
+        x: (Screen.width - width) / 2
+        y: (Screen.height - height) / 2
+        visible: root.store.platform === "windows" && root.store.connected
+                 && root.store.config.setup_done === false
+        Setup { id: setupBox; s: root.store; anchors.fill: parent }
+        onClosing: close => close.accepted = false
+    }
+
     property Connections fsWatch: Connections {
         target: root.store
         function onFullscreenChanged() {

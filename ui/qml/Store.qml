@@ -19,6 +19,9 @@ Item {
     property string providerMsg: ""
     property var update: ({ current: "", behind: 0, news: [], error: "" })
     property bool providerOk: true
+    property string platform: Qt.platform.os === "windows" ? "windows" : "linux"
+    property string appVersion: ""
+    property var setup: ({ text: "", pct: -1, done: false, error: "", working: false })
     property bool connected: nexus.connected
     property bool fullscreen: false
     property bool settingsOpen: false
@@ -61,6 +64,7 @@ Item {
         var p = ledPalette.slice(); p[i - 2] = c.toString(); paletteStr = p.join(",")
     }
     property bool editorOpen: false
+    property bool setupWantsProvider: false
     property bool providerEditorRequest: false
     readonly property int eyeCols: 9
     readonly property int eyeRows: 9
@@ -193,7 +197,12 @@ Item {
                 stepsModel.append({ icon: d.icon, text: d.text })
                 while (stepsModel.count > 5) stepsModel.remove(0)
                 break
-            case "image": store.image = "file://" + d.path + "?t=" + Date.now(); break
+            case "image": store.image = "file:///" + d.path.replace(/\\/g, "/").replace(/^\/+/, "") + "?t=" + Date.now(); break
+            case "platform": store.platform = d.os; store.appVersion = d.version || ""; break
+            case "setup_status":
+                store.setup = { text: d.text, pct: d.pct, done: d.done, error: d.error, working: !d.done && !d.error }
+                if (d.done && store.setupWantsProvider) { store.settingsOpen = true; store.providerEditorRequest = true; store.fullscreen = true }
+                break
             case "confirm": store.confirmId = d.id || ""; store.confirmText = d.text || ""; break
             case "config": store.config = d.config; break
             case "browsers": store.browsers = d.list; break
