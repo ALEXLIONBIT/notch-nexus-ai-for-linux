@@ -17,6 +17,7 @@ Item {
     property var presets: ({})           // tipi di provider (Ollama, OpenAI, Groq…)
     property var providerModels: []      // modelli caricati dal provider in modifica
     property string providerMsg: ""
+    property var update: ({ current: "", behind: 0, news: [], error: "" })
     property bool providerOk: true
     property bool connected: nexus.connected
     property bool fullscreen: false
@@ -197,6 +198,7 @@ Item {
             case "config": store.config = d.config; break
             case "browsers": store.browsers = d.list; break
             case "presets": store.presets = d.presets; break
+            case "update_status": store.update = d; break
             case "provider_models": store.providerModels = d.models; store.providerMsg = d.models.length + " modelli trovati"; store.providerOk = true; break
             case "provider_result": store.providerMsg = d.text; store.providerOk = d.ok; break
             case "session":

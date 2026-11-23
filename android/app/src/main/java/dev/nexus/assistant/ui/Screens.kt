@@ -386,8 +386,9 @@ private fun ProviderDialog(existing: Provider?, onClose: () -> Unit) {
             if (pr.hint.isNotBlank()) Text(pr.hint, fontSize = 12.sp, color = Color.Gray)
             OutlinedTextField(name, { name = it }, label = { Text("Nome") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(url, { url = it }, label = { Text("Indirizzo (URL)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            if (pr.kind != "ollama") OutlinedTextField(key, { key = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                label = { Text(if (existing?.apiKey?.isNotBlank() == true) "Chiave API (vuoto = tieni quella salvata)" else "Chiave API") },
+            OutlinedTextField(key, { key = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text(if (existing?.apiKey?.isNotBlank() == true) "Chiave API (vuoto = tieni quella salvata)"
+                               else if (pr.needsKey) "Chiave API" else "Chiave API (se il server la chiede)") },
                 visualTransformation = PasswordVisualTransformation())
             OutlinedTextField(model, { model = it }, label = { Text("Modello") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

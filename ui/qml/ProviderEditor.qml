@@ -90,9 +90,9 @@ Rectangle {
         Field { id: nameF; placeholderText: "Es. PC fisso in salotto" }
         Label2 { text: "Indirizzo (URL)" }
         Field { id: urlF; placeholderText: "http://100.64.0.2:11434" }
-        Label2 { text: pe.editing && pe.editing.api_key_hint ? "Chiave API (salvata: " + pe.editing.api_key_hint + ", lascia vuoto per tenerla)" : "Chiave API" ; visible: pe.pr.kind !== "ollama" }
-        Field { id: keyF; visible: pe.pr.kind !== "ollama"; echoMode: TextInput.Password
-                placeholderText: pe.pr.needs_key ? "sk-…" : "Facoltativa" }
+        Label2 { text: pe.editing && pe.editing.api_key_hint ? "Chiave API (salvata: " + pe.editing.api_key_hint + ", lascia vuoto per tenerla)" : "Chiave API"  }
+        Field { id: keyF; echoMode: TextInput.Password
+                placeholderText: pe.pr.needs_key ? "sk-…" : "Facoltativa (se il server la chiede)" }
 
         Label2 { text: "Modello" }
         RowLayout {

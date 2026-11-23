@@ -62,6 +62,7 @@ object Prefs {
     var providers by mutableStateOf(listOf<Provider>())
     var activeProvider by mutableStateOf("")
     var userName by mutableStateOf("")
+    var imageUrl by mutableStateOf("")          // server immagini (NEXUS sul PC), es. http://100.x.y.z:11434
 
     // aspetto (stessi nomi del PC)
     var theme by mutableStateOf("grafite")
@@ -93,6 +94,7 @@ object Prefs {
         }.getOrDefault(emptyList())
         activeProvider = sp.getString("activeProvider", "") ?: ""
         userName = sp.getString("userName", "") ?: ""
+        imageUrl = sp.getString("imageUrl", "") ?: ""
         theme = sp.getString("theme", theme)!!
         led = sp.getInt("led", led); accent = sp.getInt("accent", 0)
         shellCustom = sp.getInt("shellCustom", 0); bgCustom = sp.getInt("bgCustom", 0)
@@ -110,7 +112,7 @@ object Prefs {
         val a = JSONArray(); providers.forEach { a.put(it.toJson()) }
         sp.edit()
             .putString("providers", a.toString()).putString("activeProvider", activeProvider)
-            .putString("userName", userName).putString("theme", theme)
+            .putString("userName", userName).putString("imageUrl", imageUrl).putString("theme", theme)
             .putInt("led", led).putInt("accent", accent).putInt("shellCustom", shellCustom).putInt("bgCustom", bgCustom)
             .putString("eyeStyle", eyeStyle).putString("mouthStyle", mouthStyle).putString("dotShape", dotShape)
             .putString("helmetShape", helmetShape).putString("antenna", antenna).putBoolean("ears", ears)

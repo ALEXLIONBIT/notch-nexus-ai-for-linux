@@ -27,7 +27,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-data class ChatLine(val fromUser: Boolean, val text: String)
+data class ChatLine(val fromUser: Boolean, val text: String, val image: String? = null)
 
 /** Stato condiviso + cervello + voce. Vive per tutta l'app (anche se la finestra assistente si chiude). */
 object Core {
@@ -45,7 +45,8 @@ object Core {
     var happy by mutableStateOf(false)
     val steps = mutableStateListOf<String>()
     val chat = mutableStateListOf<ChatLine>()
-    var hideRequest by mutableIntStateOf(0)       // la finestra assistente si fa da parte quando agisce
+    var hideRequest by mutableIntStateOf(0)
+    var lastImage by mutableStateOf<String?>(null)       // la finestra assistente si fa da parte quando agisce
 
     private var tts: TextToSpeech? = null
     private var ttsReady = false
@@ -150,6 +151,7 @@ object Core {
 Parli SEMPRE in italiano. Le risposte vengono lette a voce: massimo 2 frasi brevi, niente elenchi, niente markdown, niente emoji.
 Usa i tool per agire DAVVERO sul telefono invece di spiegare come fare. Non rispondere mai "non posso": trova un modo.
 - App: open_app. Siti: open_url, web_search, youtube. Sveglie e timer: set_alarm, set_timer.
+- Immagini: generate_image con un prompt dettagliato IN INGLESE (soggetto, stile, luce, inquadratura).
 - Messaggi e chiamate: send_sms, whatsapp, dial (prepari tu, l'utente preme invia/chiama).
 - Dentro le app: read_screen per sapere cosa c'è, poi tap_text o tap, type_text, scroll, system_button. Controlla con read_screen dopo.
 NON chiudere con domande di cortesia. Fai una domanda solo se ti manca un'informazione indispensabile.
@@ -165,14 +167,14 @@ Non dire mai di aver fatto qualcosa se non hai chiamato il tool. Data e ora: $no
 
     fun ask(text: String) {
         job?.cancel(); cancelled = false
-        transcript = text; reply = ""; steps.clear(); happy = false
+        transcript = text; reply = ""; steps.clear(); happy = false; lastImage = null
         chat.add(ChatLine(true, text))
         state = "thinking"; detail = "Ci penso"
         job = scope.launch {
             val r = try { runAgent(text) } catch (e: kotlinx.coroutines.CancellationException) { return@launch }
                     catch (e: Exception) { state = "error"; "Non riesco a parlare con il cervello: ${e.message?.take(120)}" }
             reply = r
-            chat.add(ChatLine(false, r))
+            chat.add(ChatLine(false, r, lastImage))
             happy = state != "error"
             scope.launch { delay(2500); happy = false }
             speak(r)
@@ -184,7 +186,7 @@ Non dire mai di aver fatto qualcosa se non hai chiamato il tool. Data e ora: $no
         if (System.currentTimeMillis() - lastTurn > 5 * 60_000) history.clear()
         lastTurn = System.currentTimeMillis()
         val tools = Tools(app, onStep = { s -> scope.launch { steps.add(s); state = "acting"; detail = s } },
-            hideUi = { scope.launch { hideRequest++ } })
+            hideUi = { scope.launch { hideRequest++ } }, onImage = { path -> scope.launch { lastImage = path } })
         val msgs = mutableListOf(Msg("system", systemPrompt())).apply { addAll(history); add(Msg("user", text)) }
         val seen = HashMap<String, Int>()
         var reply = ""

@@ -1,6 +1,14 @@
 package dev.nexus.assistant.ui
 
+import android.content.Intent
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -100,4 +108,17 @@ fun StatusLine(modifier: Modifier = Modifier) {
         androidx.compose.foundation.layout.Box(Modifier.size(9.dp).clip(CircleShape).background(Look.stateColor))
         Text("  " + Look.statusText, color = Look.theme.inkSoft, fontSize = 15.sp, fontWeight = FontWeight.Medium)
     }
+}
+
+
+/** Immagine creata da NEXUS: tocca per aprirla. */
+@Composable
+fun GeneratedImage(path: String, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val bmp = remember(path) { BitmapFactory.decodeFile(path)?.asImageBitmap() }
+    if (bmp != null) Image(bmp, "Immagine creata", modifier.clip(RoundedCornerShape(18.dp)).clickable {
+        val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".files", File(path))
+        ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "image/png")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+    }, contentScale = ContentScale.Fit)
 }

@@ -29,6 +29,11 @@ Con un clic diventa un **casco robot a schermo intero** con il volto a LED, comp
   (tramite script KWin; le app non aperte vengono aperte da sole)
 - **Schermo sulla TV**: "condividi lo schermo sulla TV Cucina". Trova le TV in rete (Miracast, Chromecast) e usa
   GNOME Network Displays (Flatpak `org.gnome.NetworkDisplays`)
+- **Immagini**: "fammi un'immagine di…" → **Z-Image-Turbo** in locale (stable-diffusion.cpp, circa 40-60 s su
+  RTX 3060 6 GB). Un "vigile della GPU" scarica il cervello prima di disegnare, così non si superano i 6 GB
+- **Aggiornamenti**: Personalizza → Aggiornamenti → "Aggiorna ora" (git pull + riavvio). Anche l'app Android
+  si aggiorna da sola dalle release
+- **Non si chiude per sbaglio**: Alt+F4 viene ignorato, si esce solo da Personalizza → Esci da NEXUS
 - **Voce robotica** in italiano (Piper e un filtro robot regolabile) e sottotitoli karaoke sincronizzati
 - **Stop vero**: ferma subito voce, ascolto e ragionamento
 
@@ -58,6 +63,10 @@ Non serve per forza un PC potente. Da **Personalizza → Cervello** aggiungi uno
 | **LM Studio, vLLM, llama.cpp** o qualsiasi server compatibile OpenAI | server tuo in rete |
 
 Voce, finestre, mouse e TV girano sempre sul tuo PC; solo il "ragionamento" va al provider.
+
+**Telefono e tablet sul tuo PC**: NEXUS apre una porta locale (`127.0.0.1:8766`) che inoltra il cervello e crea
+immagini. Rendila raggiungibile solo dai tuoi dispositivi con `sudo tailscale serve --bg --tcp 11434 tcp://localhost:8766`
+e nell'app metti `http://IP-TAILSCALE-DEL-PC:11434` sia come cervello sia come server immagini.
 Anche la **trascrizione** può essere precisa (Whisper turbo), leggera (Whisper small) oppure online (OpenAI/Groq).
 Le chiavi API restano solo in `config.json` sul tuo PC, che non va mai su GitHub.
 

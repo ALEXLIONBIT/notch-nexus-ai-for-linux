@@ -63,6 +63,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.launch
 import dev.nexus.assistant.core.Core
 import dev.nexus.assistant.core.Prefs
 import dev.nexus.assistant.core.Provider
@@ -79,11 +80,13 @@ class MainActivity : ComponentActivity() {
 
     /** Configurazione automatica via adb: am start -n dev.nexus.assistant/.ui.MainActivity --es provider_url ... */
     private fun applySetupExtras(i: Intent?) {
+        i?.getStringExtra("image_url")?.let { if (i.getStringExtra("provider_url") == null) { Prefs.imageUrl = it; Prefs.save() } }
         val url = i?.getStringExtra("provider_url") ?: return
         val p = Provider(name = i.getStringExtra("provider_name") ?: "Il mio PC", preset = "ollama",
             kind = i.getStringExtra("provider_kind") ?: "ollama", baseUrl = url, model = i.getStringExtra("provider_model") ?: "qwen3.5:4b")
         Prefs.providers.firstOrNull { it.baseUrl == url }?.let { Prefs.upsert(p.copy(id = it.id), true) } ?: Prefs.upsert(p, true)
         i.getStringExtra("user_name")?.let { Prefs.userName = it; Prefs.save() }
+        i.getStringExtra("image_url")?.let { Prefs.imageUrl = it; Prefs.save() }
     }
 
     @Composable
@@ -94,6 +97,7 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
                 mic.launch(Manifest.permission.RECORD_AUDIO)
+            dev.nexus.assistant.core.Updater.check(this@MainActivity)
         }
         val tabs = listOf<Pair<String, ImageVector>>("NEXUS" to Icons.Filled.SmartToy, "Aspetto" to Icons.Filled.Palette,
             "Cervello" to Icons.Filled.Memory, "Configura" to Icons.Filled.Tune)
@@ -142,6 +146,7 @@ class MainActivity : ComponentActivity() {
         val th = Look.theme
         val face: @Composable (Modifier) -> Unit = { m ->
             Column(m, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (dev.nexus.assistant.core.Updater.latest.isNotEmpty()) UpdateBanner()
                 Helmet(Modifier.fillMaxWidth(if (tablet) .8f else .78f))
                 StatusLine()
                 if (Core.sayText.isNotEmpty())
@@ -154,10 +159,11 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(Core.chat.size) { if (Core.chat.isNotEmpty()) st.animateScrollToItem(Core.chat.size - 1) }
             LazyColumn(m, state = st, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(Core.chat) { line ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (line.fromUser) Arrangement.End else Arrangement.Start) {
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (line.fromUser) Alignment.End else Alignment.Start) {
                         Text(line.text, color = if (line.fromUser) Color(0xFF0B1015) else th.ink, fontSize = 15.sp,
                             modifier = Modifier.clip(RoundedCornerShape(18.dp))
                                 .background(if (line.fromUser) Look.led else chipColor()).padding(horizontal = 14.dp, vertical = 10.dp))
+                        line.image?.let { GeneratedImage(it, Modifier.padding(top = 6.dp).fillMaxWidth(.8f)) }
                     }
                 }
             }
@@ -191,6 +197,7 @@ class MainActivity : ComponentActivity() {
         val a11yOk = dev.nexus.assistant.assist.NexusAccessibility.enabled
         val brainOk = Prefs.providers.isNotEmpty()
         val mic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refresh++ }
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("Configura", color = th.ink, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
@@ -211,8 +218,31 @@ class MainActivity : ComponentActivity() {
             Text("Apri impostazioni", color = Look.led, fontWeight = FontWeight.Bold,
                 modifier = Modifier.clip(RoundedCornerShape(50)).background(chipColor())
                     .clickable { startActivity(Intent(Settings.ACTION_SETTINGS)) }.padding(horizontal = 16.dp, vertical = 10.dp))
+            Text("Immagini", color = th.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("Server di NEXUS sul PC (Z-Image-Turbo). Se è vuoto usa OpenAI, se è il cervello attivo.", color = th.inkSoft, fontSize = 13.sp)
+            NexusField(Prefs.imageUrl, "Es. http://100.x.y.z:11434") { Prefs.imageUrl = it.trim(); Prefs.save() }
+            Text("Aggiornamenti", color = th.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text("Versione installata: " + dev.nexus.assistant.core.Updater.current(ctx) +
+                (dev.nexus.assistant.core.Updater.status.let { if (it.isBlank()) "" else " · $it" }), color = th.inkSoft, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SoftButton("Controlla") { scope.launch { dev.nexus.assistant.core.Updater.check(ctx) } }
+                if (dev.nexus.assistant.core.Updater.latest.isNotEmpty())
+                    PrimaryButton("Aggiorna a " + dev.nexus.assistant.core.Updater.latest) { scope.launch { dev.nexus.assistant.core.Updater.downloadAndInstall(ctx) } }
+            }
             Text("Il tuo nome (facoltativo)", color = th.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             NexusField(Prefs.userName, "Come ti chiama NEXUS") { Prefs.userName = it; Prefs.save() }
+        }
+    }
+
+    @Composable
+    private fun UpdateBanner() {
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Look.led).clickable {
+            scope.launch { dev.nexus.assistant.core.Updater.downloadAndInstall(this@MainActivity) } }.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("Nuova versione ${dev.nexus.assistant.core.Updater.latest} disponibile", color = Color(0xFF0B1015),
+                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text(if (dev.nexus.assistant.core.Updater.busy) "…" else "Aggiorna", color = Color(0xFF0B1015), fontWeight = FontWeight.ExtraBold)
         }
     }
 

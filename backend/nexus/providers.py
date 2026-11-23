@@ -64,7 +64,8 @@ class OllamaProvider:
         import ollama
         self.ollama = ollama
         self.p, self.opts = p, opts
-        self.client = ollama.Client(host=p["base_url"].rstrip("/"), timeout=120)
+        headers = {"Authorization": f"Bearer {p['api_key']}"} if p.get("api_key") else None
+        self.client = ollama.Client(host=p["base_url"].rstrip("/"), timeout=120, headers=headers)
 
     def _convert(self, msgs):
         out = []
@@ -85,6 +86,18 @@ class OllamaProvider:
         return out
 
     def chat(self, msgs, tools, is_cancelled):
+        # Ollama su questo PC: rispetta il vigile della GPU (niente chat mentre si crea un'immagine)
+        local = any(h in self.p["base_url"] for h in ("127.0.0.1", "localhost"))
+        if local:
+            from . import gpu
+            gpu.llm_begin()
+        try:
+            return self._chat(msgs, tools, is_cancelled)
+        finally:
+            if local:
+                gpu.llm_end()
+
+    def _chat(self, msgs, tools, is_cancelled):
         opts = {"num_ctx": int(self.opts.get("num_ctx", 16384)), "temperature": 0.3}
         if self.opts.get("num_gpu") is not None:
             opts["num_gpu"] = int(self.opts["num_gpu"])
@@ -180,4 +193,6 @@ class OpenAIProvider:
 
 
 def make(p, opts=None):
-    return (OllamaProvider if p.get("kind") == "ollama" else OpenAIProvider)(p, opts or {})
+    # un indirizzo che finisce con /v1 è un'API in stile OpenAI anche se è stato salvato come "Ollama"
+    is_ollama = p.get("kind") == "ollama" and not p.get("base_url", "").rstrip("/").endswith("/v1")
+    return (OllamaProvider if is_ollama else OpenAIProvider)(p, opts or {})

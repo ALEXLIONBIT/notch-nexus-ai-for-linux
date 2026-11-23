@@ -65,12 +65,15 @@ object Llm {
 
     private fun base(p: Provider) = p.baseUrl.trimEnd('/')
 
+    /** Un indirizzo che finisce con /v1 è un'API in stile OpenAI anche se salvato come "Ollama". */
+    private fun isOllama(p: Provider) = p.kind == "ollama" && !p.baseUrl.trimEnd('/').endsWith("/v1")
+
     suspend fun chat(p: Provider, msgs: List<Msg>, tools: JSONArray): Pair<String, List<ToolCall>> =
-        if (p.kind == "ollama") ollamaChat(p, msgs, tools) else openaiChat(p, msgs, tools)
+        if (isOllama(p)) ollamaChat(p, msgs, tools) else openaiChat(p, msgs, tools)
 
     suspend fun models(p: Provider): List<String> =
-        if (p.kind == "ollama") {
-            val a = get("${base(p)}/api/tags", "").getJSONArray("models")
+        if (isOllama(p)) {
+            val a = get("${base(p)}/api/tags", p.apiKey).getJSONArray("models")
             (0 until a.length()).map { a.getJSONObject(it).getString("name") }.sorted()
         } else {
             val a = get("${base(p)}/models", p.apiKey).getJSONArray("data")
@@ -92,8 +95,8 @@ object Llm {
         val body = JSONObject().put("model", p.model).put("messages", arr).put("stream", false).put("think", false)
             .put("keep_alive", "30m").put("options", JSONObject().put("num_ctx", 16384).put("temperature", 0.3))
         if (tools.length() > 0) body.put("tools", tools)
-        val r = try { post("${base(p)}/api/chat", body, "") } catch (e: IOException) {
-            if (e.message?.contains("think") == true) post("${base(p)}/api/chat", body.apply { remove("think") }, "") else throw e
+        val r = try { post("${base(p)}/api/chat", body, p.apiKey) } catch (e: IOException) {
+            if (e.message?.contains("think") == true) post("${base(p)}/api/chat", body.apply { remove("think") }, p.apiKey) else throw e
         }
         val msg = r.getJSONObject("message")
         val calls = mutableListOf<ToolCall>()

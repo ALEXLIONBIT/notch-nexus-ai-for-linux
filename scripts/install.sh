@@ -3,6 +3,7 @@
 # Funziona su Arch/CachyOS (pacman) e su Ubuntu/Linux Mint/Debian (apt).
 #   ./scripts/install.sh                 installazione completa (cervello locale con Ollama)
 #   NEXUS_NO_OLLAMA=1 ./scripts/install.sh   PC leggero: niente Ollama, poi scegli un provider online o in rete
+#   NEXUS_NO_IMAGES=1 ./scripts/install.sh   senza il modello di immagini (Z-Image-Turbo, ~6,5 GB)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
@@ -83,6 +84,21 @@ if [ -z "${NEXUS_NO_OLLAMA:-}" ] && command -v ollama >/dev/null; then
     say "Cervello locale: $MODEL"
     sudo systemctl enable --now ollama 2>/dev/null || true
     ollama pull "$MODEL"
+fi
+
+if [ -z "${NEXUS_NO_IMAGES:-}" ]; then
+    say "Immagini: Z-Image-Turbo (stable-diffusion.cpp, ~6,5 GB)"
+    IMG="$HOME/.local/share/nexus/image"; mkdir -p "$IMG/bin"
+    if [ ! -x "$IMG/bin/sd-cli" ]; then
+        URL=$(curl -fsSL https://api.github.com/repos/leejet/stable-diffusion.cpp/releases/latest \
+              | grep -oE 'https://[^"]+Linux-Ubuntu-[0-9.]+-x86_64-vulkan\.zip' | head -1)
+        curl -fL --progress-bar -o /tmp/sd.zip "$URL" && unzip -q -o /tmp/sd.zip -d "$IMG/bin" && rm /tmp/sd.zip
+        chmod +x "$IMG/bin/sd-cli" || true
+    fi
+    HF=https://huggingface.co
+    [ -f "$IMG/ae.safetensors" ] || curl -fL --progress-bar -o "$IMG/ae.safetensors" "$HF/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors"
+    [ -f "$IMG/qwen3-4b-Q4_K_M.gguf" ] || curl -fL --progress-bar -o "$IMG/qwen3-4b-Q4_K_M.gguf" "$HF/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+    [ -f "$IMG/z_image_turbo-Q4_0.gguf" ] || curl -fL --progress-bar -o "$IMG/z_image_turbo-Q4_0.gguf" "$HF/leejet/Z-Image-Turbo-GGUF/resolve/main/z_image_turbo-Q4_0.gguf"
 fi
 
 if command -v flatpak >/dev/null; then

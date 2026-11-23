@@ -309,6 +309,26 @@ Rectangle {
                 onClicked: { editor.open(null); panel.providerOpen = true }
             }
 
+            // ---------- aggiornamenti ----------
+            Section { text: "Aggiornamenti" }
+            Text {
+                Layout.preferredWidth: col.width; wrapMode: Text.Wrap
+                color: panel.s.update.error ? "#ff5a6e" : panel.s.inkSoft
+                font { family: panel.s.sansFamily; pixelSize: 12 }
+                text: panel.s.update.restarting ? "Aggiornato! Riavvio NEXUS…"
+                    : panel.s.update.working ? "Scarico l'aggiornamento…"
+                    : panel.s.update.error ? "Non riesco a controllare: " + panel.s.update.error
+                    : (panel.s.update.current ? "Versione: " + panel.s.update.current : "Controllo…")
+                      + (panel.s.update.behind > 0 ? "\n" + panel.s.update.behind + " novità disponibili:\n" + panel.s.update.news.join("\n")
+                                                   : (panel.s.update.current ? "\nÈ l'ultima versione." : ""))
+            }
+            RowLayout {
+                spacing: 8
+                IconButton { text: "Controlla"; size: 34; tint: panel.s.ink; fill: panel.chip; onClicked: panel.s.send("update_check") }
+                IconButton { visible: panel.s.update.behind > 0; text: "Aggiorna ora"; size: 34; tint: "#0b1015"; fill: panel.s.led
+                    onClicked: panel.s.send("update_apply") }
+            }
+
             // ---------- trascrizione ----------
             Section { text: "Trascrizione" }
             Chips {
@@ -340,6 +360,18 @@ Rectangle {
                 leftPadding: 14
                 background: Rectangle { implicitHeight: 38; radius: 19; color: panel.chip }
                 onEditingFinished: if (text.trim()) panel.sendCfg("stt_remote_model", text.trim())
+            }
+
+            // ---------- esci ----------
+            IconButton {
+                Layout.preferredWidth: col.width; Layout.topMargin: 24
+                text: "Esci da NEXUS"; size: 42; tint: "white"; fill: "#d9364b"
+                onClicked: nexus.quit()
+            }
+            Text {
+                Layout.preferredWidth: col.width; wrapMode: Text.Wrap; Layout.bottomMargin: 10
+                text: "Chiude il notch. Il backend resta acceso: per riaprire lancia “nexus” o riavvia il PC."
+                color: panel.s.inkSoft; font { family: panel.s.sansFamily; pixelSize: 11 }
             }
         }
     }

@@ -19,7 +19,8 @@ import java.net.URLEncoder
 data class ToolResult(val text: String, val imageB64: String? = null)
 
 /** Le azioni che il cervello può fare sul telefono. */
-class Tools(private val ctx: Context, private val onStep: (String) -> Unit, private val hideUi: () -> Unit) {
+class Tools(private val ctx: Context, private val onStep: (String) -> Unit, private val hideUi: () -> Unit,
+            private val onImage: (String) -> Unit = {}) {
 
     // ------------------------------------------------------------ schema per il modello
     private fun fn(name: String, desc: String, props: JSONObject = JSONObject(), req: List<String> = emptyList()) =
@@ -46,6 +47,8 @@ class Tools(private val ctx: Context, private val onStep: (String) -> Unit, priv
         fn("flashlight", "Accende o spegne la torcia.", JSONObject().put("on", JSONObject().put("type", "boolean")), listOf("on")),
         fn("set_volume", "Imposta il volume dei media in percentuale.", JSONObject().put("percent", n("0-100")), listOf("percent")),
         fn("battery", "Livello della batteria e se è in carica."),
+        fn("generate_image", "Crea un'immagine da una descrizione e la salva nella Galleria. Scrivi il prompt in inglese, dettagliato.",
+            JSONObject().put("prompt", s("descrizione dettagliata in inglese")).put("shape", e("quadrata", "verticale", "orizzontale")), listOf("prompt")),
         fn("open_settings", "Apre una pagina delle impostazioni.",
             JSONObject().put("page", e("wifi", "bluetooth", "schermo", "suono", "batteria", "app", "posizione", "generale")), listOf("page")),
         fn("read_screen", "Legge i testi e i pulsanti sullo schermo con la loro posizione [x,y] (0-1000)."),
@@ -151,6 +154,12 @@ class Tools(private val ctx: Context, private val onStep: (String) -> Unit, priv
                 val p = a.optInt("percent").coerceIn(0, 100)
                 am.setStreamVolume(AudioManager.STREAM_MUSIC, max * p / 100, 0)
                 onStep("Volume $p%"); return ToolResult("Volume al $p%.")
+            }
+            "generate_image" -> {
+                onStep("Creo l'immagine (può volerci un minuto)")
+                val path = Images.generate(ctx, a.optString("prompt"), a.optString("shape", "quadrata"))
+                onImage(path)
+                return ToolResult("Immagine creata e salvata nella Galleria (cartella NEXUS).")
             }
             "battery" -> {
                 val bm = ctx.getSystemService(Context.BATTERY_SERVICE) as BatteryManager

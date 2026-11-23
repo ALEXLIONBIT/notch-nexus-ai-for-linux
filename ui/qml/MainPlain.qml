@@ -15,6 +15,7 @@ QtObject {
         y: 0
         visible: true
         Notch { id: notch; store: root.store; anchors.fill: parent; visible: !root.store.fullscreen }
+        onClosing: close => close.accepted = false
     }
 
     property Window faceWin: Window {
@@ -23,6 +24,7 @@ QtObject {
         flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
         visible: false
         Face { store: root.store; anchors.fill: parent }
+        onClosing: close => { close.accepted = false; root.store.fullscreen = false }
     }
 
     property Connections fsWatch: Connections {

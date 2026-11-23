@@ -53,6 +53,11 @@ class Bridge(QObject):
     def connected(self):
         return self.sock.state() == QAbstractSocket.SocketState.ConnectedState
 
+    @Slot()
+    def quit(self):
+        """Unico modo per chiudere NEXUS: Personalizza → Esci (Alt+F4 viene ignorato)."""
+        QGuiApplication.instance().quit()
+
     @Slot(str, "QVariantMap")
     def send(self, type_, data):
         if self.connected:
@@ -61,6 +66,7 @@ class Bridge(QObject):
 
 def main():
     app = QGuiApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
     app.setOrganizationName("nexus")
     app.setApplicationName("nexus-ui")
     for f in sorted((HERE / "fonts").glob("*.ttf")):

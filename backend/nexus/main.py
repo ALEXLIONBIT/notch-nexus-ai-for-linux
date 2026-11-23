@@ -1,6 +1,7 @@
 """NEXUS backend: orecchie → cervello → mani → voce, e parla con la UI."""
 import json
 import re
+import subprocess
 import time
 import threading
 import traceback
@@ -54,6 +55,12 @@ class Nexus:
         self.stt = Stt(self.cfg)
         self.brain = Brain(self.cfg, Tools(Ctx(self)), Ctx(self))
         self.ears.start()
+        try:                                    # porta per telefono/tablet (cervello + immagini)
+            from . import gateway
+            gateway.start()
+        except OSError as e:
+            print("gateway non avviato:", e)
+        threading.Thread(target=self.update_check, daemon=True).start()
         self.set_state("idle", self._idle_text())
         print("NEXUS pronto.")
         threading.Event().wait()
@@ -98,6 +105,10 @@ class Nexus:
             self.bus.emit("stt_result", text=text, seconds=round(time.time() - t0, 2), device=self.stt.device)
         elif t == "config":
             self.apply_config(msg.get("config", {}))
+        elif t == "update_check":
+            threading.Thread(target=self.update_check, daemon=True).start()
+        elif t == "update_apply":
+            threading.Thread(target=self.update_apply, daemon=True).start()
         elif t in ("provider_save", "provider_delete", "provider_models", "provider_test"):
             threading.Thread(target=self.provider_command, args=(t, msg), daemon=True).start()
 
@@ -134,6 +145,40 @@ class Nexus:
         self.bus.emit("config", config=self.cfg.public())
         if self.state == "idle":
             self.set_state("idle", self._idle_text())
+
+    # ---------- aggiornamenti (git) ----------
+    def _git(self, *args, timeout=60):
+        from .config import ROOT
+        return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, timeout=timeout)
+
+    def update_check(self):
+        try:
+            cur = self._git("log", "-1", "--format=%h · %cd", "--date=format:%d/%m/%Y %H:%M").stdout.strip()
+            f = self._git("fetch", "-q", "origin")
+            if f.returncode != 0:
+                raise RuntimeError(f.stderr.strip()[:120] or "git fetch non riuscito")
+            behind = int(self._git("rev-list", "--count", "HEAD..@{u}").stdout.strip() or 0)
+            news = self._git("log", "--format=• %s", "HEAD..@{u}").stdout.strip().splitlines()[:6]
+            self.bus.emit("update_status", current=cur, behind=behind, news=news, error="")
+        except Exception as e:
+            self.bus.emit("update_status", current="", behind=0, news=[], error=str(e)[:160])
+
+    def update_apply(self):
+        from .config import ROOT
+        self.bus.emit("update_status", current="", behind=0, news=[], error="", working=True)
+        old_req = (ROOT / "backend/requirements.txt").read_text()
+        r = self._git("pull", "--ff-only", timeout=180)
+        if r.returncode != 0:
+            self.bus.emit("update_status", current="", behind=0, news=[], error="git pull: " + (r.stderr or r.stdout)[-160:])
+            return
+        if (ROOT / "backend/requirements.txt").read_text() != old_req:
+            subprocess.run(["uv", "pip", "install", "-p", str(ROOT / "backend/.venv/bin/python"), "-r",
+                            str(ROOT / "backend/requirements.txt")], capture_output=True, timeout=1200)
+        self.bus.emit("update_status", current="", behind=0, news=[], error="", restarting=True)
+        # riavvio: systemd se c'è, altrimenti rilancia lo script
+        subprocess.Popen(["sh", "-c", "sleep 1; systemctl --user restart nexus-backend nexus-ui || "
+                          f"(pkill -f 'nexus.main'; pkill -f 'ui/app.py'; setsid {ROOT}/scripts/nexus >/dev/null 2>&1 &)"],
+                         start_new_session=True)
 
     def log_chat(self, text, reply, seconds):
         """Registro locale delle conversazioni (~/.local/share/nexus/chats.jsonl), utile per capire cosa migliorare."""

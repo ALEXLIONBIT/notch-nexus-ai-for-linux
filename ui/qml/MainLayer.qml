@@ -19,6 +19,7 @@ QtObject {
         LayerShell.Window.exclusionZone: -1
         LayerShell.Window.keyboardInteractivity: LayerShell.Window.KeyboardInteractivityOnDemand
         Notch { id: notch; store: root.store; anchors.fill: parent; visible: !root.store.fullscreen }
+        onClosing: close => close.accepted = false
         Component.onCompleted: visible = true
     }
 
@@ -33,6 +34,7 @@ QtObject {
         LayerShell.Window.exclusionZone: -1
         LayerShell.Window.keyboardInteractivity: LayerShell.Window.KeyboardInteractivityExclusive
         Face { store: root.store; anchors.fill: parent }
+        onClosing: close => { close.accepted = false; root.store.fullscreen = false }
     }
 
     property Connections fsWatch: Connections {

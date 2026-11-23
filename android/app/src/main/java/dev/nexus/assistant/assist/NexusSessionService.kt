@@ -15,6 +15,12 @@ class NexusSessionService : VoiceInteractionSessionService() {
 class NexusSession(ctx: android.content.Context) : VoiceInteractionSession(ctx) {
     companion object { var current: WeakReference<NexusSession>? = null }
 
+    override fun onCreate() {
+        super.onCreate()
+        // niente finestra invisibile della sessione sopra l'app: altrimenti i tocchi "fuori" non arrivano a NEXUS
+        if (android.os.Build.VERSION.SDK_INT >= 29) setUiEnabled(false)
+    }
+
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
         current = WeakReference(this)

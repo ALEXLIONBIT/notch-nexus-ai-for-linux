@@ -109,6 +109,7 @@ class AssistActivity : ComponentActivity() {
                             fontWeight = FontWeight.Bold, textAlign = TextAlign.Center))
                     else if (Core.reply.isNotBlank())
                         Text(Core.reply, color = th.ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                    Core.lastImage?.let { GeneratedImage(it, Modifier.fillMaxWidth(if (tablet) .6f else .8f)) }
                     Core.steps.takeLast(3).forEach { Text("• $it", color = th.inkSoft, fontSize = 13.sp) }
                     AskBar()
                 }
