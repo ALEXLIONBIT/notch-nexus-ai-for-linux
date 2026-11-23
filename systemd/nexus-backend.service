@@ -1,0 +1,14 @@
+[Unit]
+Description=NEXUS backend (voce, cervello, azioni)
+After=pipewire.service ollama.service
+PartOf=graphical-session.target
+
+[Service]
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=%h/nexus/backend
+ExecStart=%h/nexus/backend/.venv/bin/python -m nexus.main
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target

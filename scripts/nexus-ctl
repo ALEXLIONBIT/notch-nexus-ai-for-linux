@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Controlla NEXUS dal terminale o da una scorciatoia KDE.
+  nexus-ctl listen            → inizia ad ascoltare (es. scorciatoia Meta+N)
+  nexus-ctl say "apri chrome" → manda un comando scritto
+  nexus-ctl stop              → zittisce / ferma
+"""
+import json
+import socket
+import sys
+
+if len(sys.argv) < 2:
+    print(__doc__); sys.exit(1)
+cmd = sys.argv[1]
+msg = {"listen": {"type": "listen"}, "stop": {"type": "stop"},
+       "say": {"type": "text", "text": " ".join(sys.argv[2:])}}.get(cmd)
+if not msg:
+    print(__doc__); sys.exit(1)
+with socket.create_connection(("127.0.0.1", 8765), timeout=3) as s:
+    s.sendall((json.dumps(msg) + "\n").encode())

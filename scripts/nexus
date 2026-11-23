@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Avvia backend + UI di NEXUS in primo piano (Ctrl+C per chiudere tutto).
+ROOT="$(dirname "$(readlink -f "$0")")/.."
+cd "$ROOT/backend"
+.venv/bin/python -m nexus.main &
+BACK=$!
+trap 'kill $BACK 2>/dev/null' EXIT
+/usr/bin/python3 "$ROOT/ui/app.py"

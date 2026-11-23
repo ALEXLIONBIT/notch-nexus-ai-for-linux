@@ -1,0 +1,13 @@
+[Unit]
+Description=NEXUS UI (notch + faccia robot)
+After=graphical-session.target nexus-backend.service
+PartOf=graphical-session.target
+
+[Service]
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 %h/nexus/ui/app.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target

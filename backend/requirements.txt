@@ -1,0 +1,9 @@
+faster-whisper
+openwakeword
+piper-tts
+ollama
+sounddevice
+numpy
+psutil
+pillow
+evdev
