@@ -198,6 +198,7 @@ class MainActivity : ComponentActivity() {
         val a11yOk = dev.nexus.assistant.assist.NexusAccessibility.enabled
         val brainOk = Prefs.providers.isNotEmpty()
         val mic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refresh++ }
+        val cam = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refresh++ }
         val scope = androidx.compose.runtime.rememberCoroutineScope()
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -209,6 +210,8 @@ class MainActivity : ComponentActivity() {
                 runCatching { startActivity(Intent(Settings.ACTION_VOICE_INPUT_SETTINGS)) }
                     .onFailure { startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)) }
             }
+            val camOk = ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            SetupStep("Fotocamera", "Per \"guarda la telecamera\" e \"cosa vedi?\".", camOk, "Consenti") { cam.launch(Manifest.permission.CAMERA) }
             SetupStep("4. Accessibilità", "Serve per toccare, scrivere e leggere lo schermo nelle altre app.", a11yOk, "Apri") {
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }

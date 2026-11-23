@@ -47,6 +47,15 @@ class Tools(private val ctx: Context, private val onStep: (String) -> Unit, priv
         fn("flashlight", "Accende o spegne la torcia.", JSONObject().put("on", JSONObject().put("type", "boolean")), listOf("on")),
         fn("set_volume", "Imposta il volume dei media in percentuale.", JSONObject().put("percent", n("0-100")), listOf("percent")),
         fn("battery", "Livello della batteria e se è in carica."),
+        fn("do_not_disturb", "Attiva o disattiva la modalità Non disturbare.", JSONObject().put("on", JSONObject().put("type", "boolean")), listOf("on")),
+        fn("ringer", "Suoneria: normale, vibrazione o silenzioso.", JSONObject().put("mode", e("normale", "vibrazione", "silenzioso")), listOf("mode")),
+        fn("phone_brightness", "Luminosità dello schermo del telefono in percentuale (o automatica).",
+            JSONObject().put("percent", n("0-100")).put("auto", JSONObject().put("type", "boolean"))),
+        fn("auto_rotate", "Attiva o disattiva la rotazione automatica dello schermo.", JSONObject().put("on", JSONObject().put("type", "boolean")), listOf("on")),
+        fn("quick_setting", "Tocca un interruttore delle impostazioni rapide (es. Wi-Fi, Bluetooth, Modalità aereo, Hotspot mobile, " +
+            "Posizione, Risparmio energetico, NFC, Dati mobili, Modalità notte).", JSONObject().put("tile", s("nome dell'interruttore")), listOf("tile")),
+        fn("look_camera", "Guarda con la fotocamera del telefono (frontale = verso l'utente, posteriore = davanti al telefono) e ti mostra la foto.",
+            JSONObject().put("camera", e("frontale", "posteriore")).put("question", s("cosa guardare")), listOf("camera")),
         fn("run_shell", "Esegue un comando nella shell del telefono (sandbox dell'app: getprop, ls, ping, date, df, settings get, ecc). Ritorna l'output.",
             JSONObject().put("command", s("comando sh")), listOf("command")),
         fn("set_mode", "Automode ('auto': niente conferme) o modalità manuale ('manuale').", JSONObject().put("mode", e("auto", "manuale")), listOf("mode")),
@@ -169,6 +178,62 @@ class Tools(private val ctx: Context, private val onStep: (String) -> Unit, priv
                 val path = Images.generate(ctx, a.optString("prompt"), a.optString("shape", "quadrata"))
                 onImage(path)
                 return ToolResult("Immagine creata e salvata nella Galleria (cartella NEXUS).")
+            }
+            "do_not_disturb" -> {
+                val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                if (!nm.isNotificationPolicyAccessGranted) {
+                    hideUi(); start(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+                    return ToolResult("Serve il permesso 'Accesso Non disturbare' per NEXUS: l'ho aperto, attivalo.")
+                }
+                val on = a.optBoolean("on", true)
+                nm.setInterruptionFilter(if (on) android.app.NotificationManager.INTERRUPTION_FILTER_PRIORITY else android.app.NotificationManager.INTERRUPTION_FILTER_ALL)
+                onStep(if (on) "Non disturbare attivo" else "Non disturbare spento")
+                return ToolResult(if (on) "Non disturbare attivato." else "Non disturbare disattivato.")
+            }
+            "ringer" -> {
+                val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                val mode = when (a.optString("mode")) { "vibrazione" -> AudioManager.RINGER_MODE_VIBRATE; "silenzioso" -> AudioManager.RINGER_MODE_SILENT; else -> AudioManager.RINGER_MODE_NORMAL }
+                return try { am.ringerMode = mode; onStep("Suoneria: ${a.optString("mode")}"); ToolResult("Suoneria: ${a.optString("mode")}.") }
+                catch (e: SecurityException) { ToolResult("Per il silenzioso serve il permesso 'Accesso Non disturbare'.") }
+            }
+            "phone_brightness" -> {
+                if (!Settings.System.canWrite(ctx)) {
+                    hideUi(); start(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:${ctx.packageName}")))
+                    return ToolResult("Serve il permesso 'Modifica impostazioni di sistema': l'ho aperto, attivalo.")
+                }
+                val cr = ctx.contentResolver
+                if (a.optBoolean("auto", false)) {
+                    Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC)
+                    onStep("Luminosità automatica"); return ToolResult("Luminosità automatica.")
+                }
+                val p = a.optInt("percent", 50).coerceIn(1, 100)
+                Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS_MODE, Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL)
+                Settings.System.putInt(cr, Settings.System.SCREEN_BRIGHTNESS, (p * 255 / 100).coerceAtLeast(1))
+                onStep("Luminosità $p%"); return ToolResult("Luminosità al $p%.")
+            }
+            "auto_rotate" -> {
+                if (!Settings.System.canWrite(ctx)) return ToolResult("Serve il permesso 'Modifica impostazioni di sistema'.")
+                val on = a.optBoolean("on", true)
+                Settings.System.putInt(ctx.contentResolver, Settings.System.ACCELEROMETER_ROTATION, if (on) 1 else 0)
+                onStep(if (on) "Rotazione automatica attiva" else "Rotazione bloccata"); return ToolResult("Fatto.")
+            }
+            "quick_setting" -> {
+                val s = a11y() ?: return ToolResult(needA11y)
+                val tile = a.optString("tile")
+                hideUi(); delay(300); onStep("Impostazioni rapide: $tile")
+                s.global("impostazioni_rapide"); delay(900)
+                var hit = s.clickText(tile)
+                if (hit == null) { s.swipe("giu"); delay(700); hit = s.clickText(tile) }     // pannello completo
+                delay(600); s.global("indietro"); delay(200); s.global("indietro")
+                return if (hit != null) ToolResult("Ho toccato '$hit' nelle impostazioni rapide.") else ToolResult("Non trovo '$tile' nelle impostazioni rapide.")
+            }
+            "look_camera" -> {
+                val front = a.optString("camera", "frontale") != "posteriore"
+                if (androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
+                    return ToolResult("Serve il permesso della fotocamera: NEXUS → Configura → Fotocamera.")
+                onStep(if (front) "Guardo con la fotocamera frontale" else "Guardo con la fotocamera posteriore")
+                val img = Cam.captureB64(ctx, front)
+                return ToolResult("Ecco la foto appena scattata (${if (front) "frontale" else "posteriore"}). Descrivi cosa vedi.", img)
             }
             "run_shell" -> {
                 val cmd = a.optString("command")

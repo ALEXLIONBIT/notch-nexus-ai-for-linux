@@ -37,6 +37,8 @@ Con un clic diventa un **casco robot a schermo intero** con il volto a LED, comp
   luminosità, promemoria, pagine web, Wi-Fi/Bluetooth, processi, blocco/spegnimento. L'agente li preferisce allo schermo
 - **Automode / Manuale**: "Hey Jarvis, mettiti in automode" → niente più conferme (anche dal notch o dalle impostazioni);
   i comandi distruttivi restano sempre bloccati
+- **Webcam**: "guarda la telecamera, cosa vedi?" → foto e descrizione (schiarisce da sola le stanze buie)
+- **Cervello di riserva**: se il cervello scelto non risponde, NEXUS chiede se passare a quello locale (in automode lo fa da solo)
 - **Non si chiude per sbaglio**: Alt+F4 viene ignorato, si esce solo da Personalizza → Esci da NEXUS
 - **Voce robotica** in italiano (Piper e un filtro robot regolabile) e sottotitoli karaoke sincronizzati
 - **Stop vero**: ferma subito voce, ascolto e ragionamento
@@ -46,6 +48,8 @@ Con un clic diventa un **casco robot a schermo intero** con il volto a LED, comp
 In `android/` c'è NEXUS per Android: **tieni premuto il tasto laterale** (al posto di Gemini) e si apre il robot.
 - Apre app, siti, YouTube, sveglie, timer, chiamate e SMS, WhatsApp, navigatore, torcia, volume, impostazioni
 - Con l'accessibilità legge lo schermo, tocca pulsanti, scrive, scorre e usa i tasti di sistema
+- Controlli del telefono: Non disturbare, suoneria, luminosità, rotazione, qualsiasi interruttore delle impostazioni rapide
+- Fotocamera frontale/posteriore ("cosa vedi?"), terminale, automode, cervello di riserva se quello scelto non risponde
 - Stessi provider del PC (il tuo PC via Tailscale, OpenAI, Claude, Gemini, Groq…, o Ollama in Termux sul telefono)
 - Stesso aspetto: temi, colori, forme ed editor di disegno a LED; layout apposta per i tablet
 

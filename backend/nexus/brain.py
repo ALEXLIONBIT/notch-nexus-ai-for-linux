@@ -26,6 +26,7 @@ Hai dei tool per agire DAVVERO sul PC: usali invece di spiegare come fare.
 - Per scrivere in un'app: prima clicca nel campo giusto, poi type_text.
 - Finestre: list_windows, place_window (sinistra/destra/quarti), split_screen per affiancarne due,
   window_action per attivare/massimizzare/ridurre/chiudere. Le app non aperte vengono aperte da sole.
+- Webcam: look_camera quando l'utente dice "guarda la telecamera", "cosa vedi?", "cosa ho in mano?".
 - Immagini: generate_image con un prompt dettagliato IN INGLESE (soggetto, stile, luce, inquadratura).
 - TV: list_tvs per vedere le TV, cast_screen per condividere lo schermo su una TV, stop_cast per fermare.
 - organize_desktop e run_shell chiedono conferma da soli: non chiedere conferma tu prima.
@@ -66,8 +67,36 @@ class Brain:
         return make_provider(self.cfg.active_provider(), self.cfg)
 
     def _chat(self, messages):
-        """Chiamata in streaming: si può interrompere a metà con stop."""
-        return self.provider().chat(messages, self.tools.schemas, lambda: self.cancelled)
+        """Chiamata in streaming: si può interrompere a metà con stop.
+        Se il cervello scelto non risponde, propone di passare a quello locale e riprova."""
+        try:
+            return self.provider().chat(messages, self.tools.schemas, lambda: self.cancelled)
+        except Cancelled:
+            raise
+        except Exception as e:
+            if "context" in str(e).lower():
+                raise
+            fb = self._fallback()
+            if not fb:
+                raise
+            cur = self.cfg.active_provider()
+            print(f"cervello '{cur.get('name')}' non risponde: {str(e)[:150]}")
+            if not self.ctx.confirm(f"Il cervello {cur.get('name')} non risponde. Passo a quello locale, {fb.get('model')} su questo PC?"):
+                raise
+            self.cfg["provider"] = fb["id"]
+            self.cfg.save()
+            self.ctx.n.bus.emit("config", config=self.cfg.public())
+            self.ctx.step("🔁", f"Uso il cervello locale ({fb.get('model')})")
+            return self.provider().chat(messages, self.tools.schemas, lambda: self.cancelled)
+
+    def _fallback(self):
+        """Un cervello Ollama su questo PC, diverso da quello attivo."""
+        cur = self.cfg.active_provider()
+        for p in self.cfg["providers"]:
+            local = any(h in p.get("base_url", "") for h in ("127.0.0.1", "localhost"))
+            if p["id"] != cur["id"] and p.get("kind") == "ollama" and local:
+                return p
+        return None
 
     def run(self, user_text):
         try:

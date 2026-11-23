@@ -181,6 +181,8 @@ object Core {
 Parli SEMPRE in italiano. Le risposte vengono lette a voce: massimo 2 frasi brevi, niente elenchi, niente markdown, niente emoji.
 Usa i tool per agire DAVVERO sul telefono invece di spiegare come fare. Non rispondere mai "non posso": trova un modo.
 - App: open_app. Siti: open_url, web_search, youtube. Sveglie e timer: set_alarm, set_timer.
+- Telefono: do_not_disturb, ringer, phone_brightness, auto_rotate, quick_setting (Wi-Fi, Bluetooth, aereo, hotspot…), flashlight, set_volume.
+- Fotocamera: look_camera quando l'utente dice "guarda", "cosa vedi?", "telecamera frontale/posteriore".
 - Terminale: run_shell esegue comandi della shell Android (getprop, ls, ping, date, settings get…).
 - Modalità: set_mode('auto') per non chiedere conferme, set_mode('manuale') per chiederle.
 - Immagini: generate_image con un prompt dettagliato IN INGLESE (soggetto, stile, luce, inquadratura).
@@ -227,7 +229,7 @@ Non dire mai di aver fatto qualcosa se non hai chiamato il tool. Data e ora: $no
     }
 
     private suspend fun runAgent(text: String): String {
-        val p = Prefs.active() ?: return "Prima aggiungi un cervello: apri NEXUS, scheda Cervello."
+        var p = Prefs.active() ?: return "Prima aggiungi un cervello: apri NEXUS, scheda Cervello."
         if (System.currentTimeMillis() - lastTurn > 5 * 60_000) history.clear()
         lastTurn = System.currentTimeMillis()
         val tools = Tools(app, onStep = { s -> scope.launch { steps.add(s); state = "acting"; detail = s } },
@@ -240,7 +242,19 @@ Non dire mai di aver fatto qualcosa se non hai chiamato il tool. Data e ora: $no
             // tiene solo l'ultima immagine (le altre occupano troppo)
             val lastImg = msgs.indexOfLast { it.imageB64 != null }
             for (i in msgs.indices) if (i != lastImg && msgs[i].imageB64 != null) msgs[i] = msgs[i].copy(imageB64 = null, content = "(screenshot precedente)")
-            val (content, calls) = withContext(Dispatchers.IO) { Llm.chat(p, msgs, tools.schemas) }
+            val (content, calls) = try {
+                withContext(Dispatchers.IO) { Llm.chat(p, msgs, tools.schemas) }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
+                // il cervello non risponde: propone il prossimo (prima il PC, poi il modello sul telefono)
+                val cur = p
+                val fb = Prefs.providers.filter { it.id != cur.id }.sortedBy {
+                    when { it.kind == "ollama" && !it.baseUrl.contains("127.0.0.1") && !it.baseUrl.trimEnd('/').endsWith("/v1") -> 0
+                           it.baseUrl.contains("127.0.0.1") -> 1; else -> 2 } }.firstOrNull() ?: throw e
+                if (!confirm("Il cervello ${cur.name} non risponde. Passo a ${fb.name}?")) throw e
+                Prefs.activeProvider = fb.id; Prefs.save(); p = fb
+                steps.add("Uso ${fb.name}")
+                withContext(Dispatchers.IO) { Llm.chat(p, msgs, tools.schemas) }
+            }
             msgs.add(Msg("assistant", content, toolCalls = calls))
             if (calls.isEmpty()) { reply = dropCourtesy(content).ifBlank { "Fatto." }; finished = true; break }
             for (c in calls) {
