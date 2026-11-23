@@ -18,15 +18,24 @@ SHOTS = Path(os.environ.get("NEXUS_SELFTEST_SHOTS") or Path.cwd())
 OPTIONAL = {"winrt_media", "radio", "camera", "volume", "brightness"}   # dipendono dall'hardware del PC
 
 
+WATCHDOG = 300           # secondi: una prova che si pianta salva dove si è fermata e chiude
+
+
 def check(name):
     def deco(fn):
+        import faulthandler
         t0 = time.time()
+        hang = open(SHOTS / f"selftest-hang-{name}.txt", "w")
+        faulthandler.dump_traceback_later(WATCHDOG, exit=True, file=hang)
         try:
             detail = fn()
             RESULTS[name] = {"ok": True, "detail": str(detail)[:400], "s": round(time.time() - t0, 1)}
         except Exception as e:
             RESULTS[name] = {"ok": False, "detail": f"{type(e).__name__}: {e}"[:400],
                              "trace": traceback.format_exc()[-1200:], "s": round(time.time() - t0, 1)}
+        faulthandler.cancel_dump_traceback_later()
+        hang.close()
+        Path(hang.name).unlink(missing_ok=True)
         print(("OK  " if RESULTS[name]["ok"] else "ERR ") + name, "-", RESULTS[name]["detail"][:200], flush=True)
         OUT.write_text(json.dumps(RESULTS, indent=1, ensure_ascii=False), encoding="utf-8")
         return fn
@@ -298,24 +307,18 @@ def main():
 
     @check("ui_qml")
     def _():
-        os.environ["QT_QPA_PLATFORM"] = "offscreen"
-        from PySide6.QtCore import QTimer, QUrl
-        from PySide6.QtGui import QGuiApplication
-        from PySide6.QtQml import QQmlApplicationEngine
-        import app as ui
-        qapp = QGuiApplication.instance() or QGuiApplication(sys.argv)
-        warnings = []
-        eng = QQmlApplicationEngine()
-        eng.warnings.connect(lambda ws: warnings.extend(w.toString() for w in ws))
-        eng.rootContext().setContextProperty("nexus", ui.Bridge())
-        eng.addImportPath(str(ui.HERE / "qml"))
-        eng.load(QUrl.fromLocalFile(str(ui.HERE / "qml" / "MainPlain.qml")))
-        QTimer.singleShot(1500, qapp.quit)
-        qapp.exec()
-        assert eng.rootObjects(), "QML non caricato: " + "; ".join(warnings[:5])
-        bad = [w for w in warnings if "Error" in w or "is not installed" in w or "not found" in w.lower()]
-        assert not bad, "; ".join(bad[:5])
-        return f"interfaccia caricata, {len(warnings)} avvisi"
+        import subprocess
+        out = SHOTS / "selftest-ui.json"
+        out.unlink(missing_ok=True)
+        cmd = [sys.executable, "--selftest-ui"] if getattr(sys, "frozen", False) else \
+              [sys.executable, str(Path(__file__).with_name("nexus_win.py")), "--selftest-ui"]
+        try:
+            subprocess.run(cmd, timeout=120, env=dict(os.environ, NEXUS_SELFTEST_UI_OUT=str(out)))
+        except subprocess.TimeoutExpired:
+            raise AssertionError("l'interfaccia non si è chiusa entro 2 minuti")
+        res = json.loads(out.read_text(encoding="utf-8"))
+        assert res["ok"], res["detail"]
+        return res["detail"]
 
     failed = [k for k, v in RESULTS.items() if not v["ok"] and k not in OPTIONAL]
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} prove passate", "FALLITE: " + ", ".join(failed) if failed else "")
@@ -324,3 +327,37 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def ui_main():
+    """NEXUS.exe --selftest-ui: carica l'interfaccia QML vera (fuori schermo), poi si chiude."""
+    import faulthandler
+    out = Path(os.environ.get("NEXUS_SELFTEST_UI_OUT") or Path.cwd() / "selftest-ui.json")
+    faulthandler.dump_traceback_later(90, exit=True, file=open(out.with_suffix(".hang.txt"), "w"))
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    res = {"ok": False, "detail": ""}
+    try:
+        from PySide6.QtCore import QTimer, QUrl
+        from PySide6.QtGui import QGuiApplication
+        from PySide6.QtQml import QQmlApplicationEngine
+        qapp = QGuiApplication(sys.argv[:1])
+        import app as ui
+        warnings = []
+        eng = QQmlApplicationEngine()
+        eng.warnings.connect(lambda ws: warnings.extend(w.toString() for w in ws))
+        eng.rootContext().setContextProperty("nexus", ui.Bridge())
+        eng.addImportPath(str(ui.HERE / "qml"))
+        eng.load(QUrl.fromLocalFile(str(ui.HERE / "qml" / "MainPlain.qml")))
+        QTimer.singleShot(1500, qapp.quit)
+        qapp.exec()
+        bad = [w for w in warnings if "Error" in w or "is not installed" in w or "not found" in w.lower()]
+        if not eng.rootObjects():
+            res["detail"] = "QML non caricato: " + "; ".join(warnings[:5])
+        elif bad:
+            res["detail"] = "; ".join(bad[:5])
+        else:
+            res = {"ok": True, "detail": f"interfaccia caricata, {len(warnings)} avvisi: " + "; ".join(warnings[:3])}
+    except Exception as e:
+        res["detail"] = f"{type(e).__name__}: {e}"
+    out.write_text(json.dumps(res, ensure_ascii=False), encoding="utf-8")
+    os._exit(0)

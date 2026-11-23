@@ -36,6 +36,14 @@ if IS_WIN:
 
 _win_cache = {"t": 0.0, "apps": {}}
 
+# programmi di sistema sempre presenti (anche se manca il collegamento nel menu Start)
+WIN_SYSTEM_APPS = {
+    "blocco note": "notepad.exe", "calcolatrice": "calc.exe", "paint": "mspaint.exe",
+    "esplora file": "explorer.exe", "prompt dei comandi": "cmd.exe", "windows powershell": "powershell.exe",
+    "gestione attività": "taskmgr.exe", "pannello di controllo": "control.exe", "impostazioni": "ms-settings:",
+    "terminale": "wt.exe", "strumento di cattura": "ms-screenclip:", "editor del registro": "regedit.exe",
+}
+
 
 def _win_scan():
     """App di Windows: collegamenti del menu Start (.lnk) + app dello Store (Get-StartApps). Tenute 2 minuti."""
@@ -70,7 +78,9 @@ def _win_scan():
 def launch_app(app):
     """Avvia un'app trovata con find_app."""
     if IS_WIN:
-        if app["id"].startswith("shell:AppsFolder"):
+        if app.get("system"):
+            open_path(app["id"])
+        elif app["id"].startswith("shell:AppsFolder"):
             popen(["explorer.exe", app["id"]])
         else:
             open_path(app["id"])
@@ -199,6 +209,11 @@ def find_app(query, cfg=None):
             score = difflib.SequenceMatcher(None, q, name).ratio() * 60
         if score > best_score:
             best, best_score = a, score
+    if IS_WIN and best_score < 75 and q in WIN_SYSTEM_APPS:
+        import shutil
+        target = WIN_SYSTEM_APPS[q]
+        if target.endswith(":") or shutil.which(target):
+            return {"id": target, "name": q.capitalize(), "search": q, "system": True}
     return best if best_score >= 40 else None
 
 

@@ -37,6 +37,9 @@ def _single_instance():
 
 
 def main():
+    if "--selftest-ui" in sys.argv:
+        import selftest
+        selftest.ui_main()
     if "--selftest" in sys.argv:
         import selftest
         sys.exit(selftest.main())
