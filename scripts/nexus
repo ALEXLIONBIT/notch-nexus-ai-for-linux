@@ -5,4 +5,4 @@ cd "$ROOT/backend"
 .venv/bin/python -m nexus.main &
 BACK=$!
 trap 'kill $BACK 2>/dev/null' EXIT
-/usr/bin/python3 "$ROOT/ui/app.py"
+"$ROOT/scripts/nexus-ui" "$@"

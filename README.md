@@ -21,6 +21,8 @@ Con un clic diventa un **casco robot a schermo intero** con il volto a LED, comp
 - **Cervello locale**: Qwen 3.5 con visione e tool, tramite Ollama (4B entra tutto in una GPU da 6 GB)
 - **Vede lo schermo**: screenshot e OCR con le posizioni dei testi, così sa dove cliccare
 - **Mouse e tastiera su Wayland**: dispositivi virtuali uinput con coordinate assolute, precisi a ogni scala
+- **App e giochi**: controlla se un programma c'è, lo installa da Flathub (senza password), installa o avvia
+  giochi **Steam** per nome ("installami Portal 2", "avvia Counter-Strike 2")
 - **Azioni**: apre app, siti e cartelle, cerca sul web, riordina il desktop (con conferma e annulla), comandi da
   terminale (sempre con conferma), volume, batteria
 - **Finestre**: "metti Firefox a destra e LibreOffice Writer a sinistra", massimizza, riduci, chiudi
@@ -58,25 +60,34 @@ Le chiavi API restano solo in `config.json` sul tuo PC, che non va mai su GitHub
 
 ## Requisiti
 
-- Linux con **KDE Plasma su Wayland** (testato su CachyOS); su altri desktop il notch usa finestre normali
-- GPU NVIDIA consigliata (testato su RTX 3060 6 GB); funziona anche solo su CPU, più lento
+- Linux: **KDE Plasma** (Wayland o X11) oppure **Linux Mint / Ubuntu / Debian** (Cinnamon, MATE, XFCE su X11)
+- Per il cervello locale: GPU NVIDIA consigliata (testato su RTX 3060 6 GB). Su PC leggeri usa un **provider**
+  (altro PC in rete o Tailscale, oppure API online)
 - Microfono e casse
+
+| Funzione | KDE Plasma | Linux Mint / altri desktop |
+|---|---|---|
+| Notch sempre sopra | layer-shell | finestra senza bordi in alto |
+| Finestre | script KWin | `wmctrl` |
+| Screenshot | Spectacle | gnome-screenshot / X11 |
+| Scrivere testo | wl-clipboard | xclip |
+
+> Testato su CachyOS + KDE Plasma. Il supporto per Linux Mint è nuovo: se qualcosa non va, apri una issue.
 
 ## Installazione
 
 ```bash
-# 1. pacchetti di sistema (Arch / CachyOS)
-sudo pacman -S --needed ollama-cuda sox uv layer-shell-qt pyside6 wl-clipboard \
-     tesseract tesseract-data-ita tesseract-data-eng spectacle
-sudo systemctl enable --now ollama
-
-# 2. NEXUS
 git clone https://github.com/ALEXLIONBIT/notch-nexus-ai-for-linux.git ~/nexus
 cd ~/nexus && ./scripts/install.sh
-
-# 3. avvio automatico
-systemctl --user enable --now nexus-backend nexus-ui
 ```
+
+Lo script riconosce da solo **pacman** (Arch, CachyOS) o **apt** (Ubuntu, Linux Mint, Debian) e installa tutto:
+pacchetti, Python, voci, Whisper, Ollama con il modello, permessi per mouse e tastiera e avvio automatico.
+Dopo, esci e rientra una volta, perché serve il gruppo `input` per mouse e tastiera.
+
+**PC poco potente?** Usa `NEXUS_NO_OLLAMA=1 ./scripts/install.sh`, poi da Personalizza → Cervello aggiungi un
+provider (un altro PC con Ollama in casa o via Tailscale, oppure OpenAI, Groq…) e scegli la trascrizione
+"leggera" oppure "online".
 
 Le impostazioni personali vanno in `config.json`, creato al primo salvataggio dalla UI. Per esempio
 `"user_name": "Mario"` fa sì che il robot ti chiami per nome, e `"model": "qwen3.5:9b"` cambia cervello.

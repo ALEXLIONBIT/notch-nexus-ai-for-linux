@@ -1,5 +1,7 @@
 """NEXUS backend: orecchie → cervello → mani → voce, e parla con la UI."""
+import json
 import re
+import time
 import threading
 import traceback
 import uuid
@@ -133,6 +135,18 @@ class Nexus:
         if self.state == "idle":
             self.set_state("idle", self._idle_text())
 
+    def log_chat(self, text, reply, seconds):
+        """Registro locale delle conversazioni (~/.local/share/nexus/chats.jsonl), utile per capire cosa migliorare."""
+        from .config import DATA
+        rec = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "user": text, "reply": reply,
+               "seconds": round(seconds, 1), "model": self.cfg.active_provider().get("model"),
+               "steps": getattr(self.brain, "log_steps", [])}
+        try:
+            with open(DATA / "chats.jsonl", "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
     # ---------- provider ----------
     def provider_command(self, t, msg):
         from .providers import make, PRESETS
@@ -215,7 +229,9 @@ class Nexus:
                         break
                 self.bus.emit("transcript", text=text)
                 self.set_state("thinking", "Penso…")
+                t0 = time.time()
                 reply = self.brain.run(text)
+                self.log_chat(text, reply, time.time() - t0)
                 if self.stopped:
                     break
                 self.bus.emit("reply", text=reply)

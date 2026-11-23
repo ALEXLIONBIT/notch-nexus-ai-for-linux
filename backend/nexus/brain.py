@@ -1,4 +1,5 @@
 """Il cervello: Qwen (vision + tool calling) via Ollama, con loop di azioni."""
+import json
 import re
 import time
 from datetime import datetime
@@ -10,6 +11,10 @@ Le tue risposte vengono lette a voce: massimo 2 frasi brevi, niente elenchi, nie
 NON chiudere con domande di cortesia ("vuoi altro?", "cosa vuoi guardare?"): fai una domanda SOLO se ti manca \
 un'informazione indispensabile per finire il compito. Altrimenti termina con una frase affermativa.
 Non dire MAI di aver fatto un'azione se non hai chiamato il tool: senza tool non succede niente sul PC.
+Non rispondere MAI "non posso": trova sempre un modo con i tool. Esempi: per giocare o installare giochi usa
+steam_game (installa o avvia un gioco Steam); per un programma usa find_app e se manca install_app;
+se serve qualcosa che deve fare l'utente (login, password), apri tu la cosa giusta e diglielo in una frase.
+Sii veloce: usa il tool più diretto, non guardare lo schermo se non serve.
 Hai dei tool per agire DAVVERO sul PC: usali invece di spiegare come fare.
 - Per aprire programmi usa open_app, per siti open_url, per cercare web_search.
 - Se ti serve sapere cosa c'è sullo schermo usa look_screen: ti dà l'immagine e i testi con la posizione [x,y].
@@ -83,6 +88,7 @@ class Brain:
 
     def _run(self, user_text):
         self.cancelled = False
+        self.log_steps = []
         if time.time() - self.last > self.cfg["memory_minutes"] * 60:
             self.history = []
         self.last = time.time()
@@ -92,6 +98,8 @@ class Brain:
                 {"role": "user", "content": user_text}]
         reply = "Ho fatto troppi passaggi senza finire, riprova con una richiesta più semplice."
         used_tools, nudged = False, False
+        seen_calls = {}
+        finished = False
         for _ in range(self.cfg["max_steps"]):
             if self.cancelled:
                 raise Cancelled()
@@ -107,17 +115,38 @@ class Brain:
                     msgs.append({"role": "system", "content": "Non hai chiamato nessun tool, quindi l'azione NON "
                                  "è stata fatta. Chiama adesso il tool giusto."})
                     continue
+                finished = True
                 break
             used_tools = True
             for c in calls:
                 if self.cancelled:
                     raise Cancelled()
                 name, args = c["name"], c["arguments"]
+                key = name + json.dumps(args, sort_keys=True)
+                seen_calls[key] = seen_calls.get(key, 0) + 1
+                if seen_calls[key] > 1 and name not in ("look_screen", "press_keys", "scroll"):
+                    # sta ripetendo la stessa azione: non rifarla, fallo concludere
+                    msgs.append({"role": "tool", "content": "Hai GIÀ fatto questa azione con questo risultato. "
+                                 "Non ripeterla: rispondi all'utente o prova un'altra strada.",
+                                 "name": name, "tool_call_id": c["id"]})
+                    continue
                 res = self.tools.call(name, args)
+                self.log_steps.append({"tool": name, "args": args, "result": res.text[:300]})
                 msgs.append({"role": "tool", "content": res.text, "name": name, "tool_call_id": c["id"]})
                 if res.image:
                     msgs.append({"role": "user", "content": "Ecco lo screenshot attuale dello schermo.",
                                  "images": [res.image]})
+        if not finished:
+            # limite di passaggi: invece di arrendersi, riassume cosa ha fatto e cosa manca
+            try:
+                msgs.append({"role": "system", "content": "Basta azioni. In una o due frasi di' all'utente cosa hai "
+                             "fatto finora e cosa manca (o cosa deve fare lui)."})
+                content, _ = self.provider().chat(msgs, [], lambda: self.cancelled)
+                reply = drop_courtesy(content) or reply
+            except Cancelled:
+                raise
+            except Exception:
+                pass
         # memoria breve: niente immagini, risultati dei tool accorciati, ultimi 12 messaggi
         hist = []
         for mm in msgs[1:]:

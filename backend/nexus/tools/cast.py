@@ -56,8 +56,16 @@ def cast_screen(ctx, tv):
     match = difflib.get_close_matches(tv, names, n=1, cutoff=0.3) or [n for n in names if tv.lower() in n.lower()]
     target = match[0] if match else tv
     ctx.step("📺", f"Preparo lo streaming verso {target}")
-    subprocess.Popen(["flatpak", "run", APP_ID], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     start_new_session=True)
+    import shutil
+    has_flatpak = shutil.which("flatpak") and subprocess.run(["flatpak", "info", APP_ID], capture_output=True).returncode == 0
+    if has_flatpak:
+        cmd = ["flatpak", "run", APP_ID]
+    elif shutil.which("gnome-network-displays"):
+        cmd = ["gnome-network-displays"]
+    else:
+        return ("Per trasmettere lo schermo serve GNOME Network Displays: "
+                "flatpak install --user flathub org.gnome.NetworkDisplays (oppure sudo apt install gnome-network-displays).")
+    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     from . import inputs
     from PIL import Image
     # aspetta che la TV compaia nella lista di Network Displays
@@ -99,4 +107,5 @@ def cast_screen(ctx, tv):
 def stop_cast(ctx):
     ctx.step("📺", "Fermo lo streaming")
     subprocess.run(["flatpak", "kill", APP_ID], capture_output=True, timeout=10)
+    subprocess.run(["pkill", "-f", "gnome-network-displays"], capture_output=True, timeout=10)
     return "Ho fermato la trasmissione."

@@ -5,7 +5,7 @@ PartOf=graphical-session.target
 
 [Service]
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 %h/nexus/ui/app.py
+ExecStart=%h/nexus/scripts/nexus-ui
 Restart=on-failure
 RestartSec=3
 

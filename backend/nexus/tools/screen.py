@@ -1,5 +1,6 @@
 """Vedere lo schermo: screenshot (Spectacle, va su KDE Wayland) + OCR tesseract + visione."""
 import csv
+import os
 import difflib
 import io
 import subprocess
@@ -9,21 +10,42 @@ from . import tool, ToolResult
 from ..config import CACHE
 
 
+def _wait_file(path, tries=50):
+    for _ in range(tries):
+        if path.exists() and path.stat().st_size > 0:
+            return True
+        time.sleep(0.1)
+    return False
+
+
 def screenshot():
+    """Screenshot dell'intero schermo. KDE: Spectacle; wlroots: grim; GNOME/Cinnamon/MATE: gnome-screenshot;
+    X11 in generale: Pillow (ImageGrab)."""
+    import shutil
     path = CACHE / "screen.png"
     path.unlink(missing_ok=True)
-    subprocess.run(["spectacle", "-b", "-n", "-f", "-o", str(path)], timeout=20,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for _ in range(50):
-        if path.exists() and path.stat().st_size > 0:
-            break
-        time.sleep(0.1)
-    if not path.exists():
-        raise RuntimeError("screenshot non riuscito")
-    return path
+    tries = []
+    if shutil.which("spectacle"):
+        tries.append(["spectacle", "-b", "-n", "-f", "-o", str(path)])
+    if shutil.which("grim") and os.environ.get("WAYLAND_DISPLAY"):
+        tries.append(["grim", str(path)])
+    if shutil.which("gnome-screenshot"):
+        tries.append(["gnome-screenshot", "-f", str(path)])
+    for cmd in tries:
+        try:
+            subprocess.run(cmd, timeout=20, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (subprocess.TimeoutExpired, OSError):
+            continue
+        if _wait_file(path, 30):
+            return path
+    if os.environ.get("DISPLAY"):                    # X11 (es. Linux Mint Cinnamon)
+        from PIL import ImageGrab
+        ImageGrab.grab().save(path)
+        return path
+    raise RuntimeError("screenshot non riuscito: installa spectacle, grim o gnome-screenshot")
 
 
-def small_copy(path, max_w=1280):
+def small_copy(path, max_w=1024):
     for old in CACHE.glob("screen_small_*.jpg"):     # file unico per ogni screenshot
         old.unlink(missing_ok=True)
     from PIL import Image
@@ -45,19 +67,51 @@ def _langs():
         return []
 
 
-def ocr(path):
-    """Ritorna righe [{text, x, y, w, h, words:[...]}] in pixel dello screenshot."""
-    out = subprocess.run(["tesseract", str(path), "stdout", *_langs(), "tsv"],
-                         capture_output=True, text=True, timeout=60).stdout
-    lines = {}
+def _ocr_band(img_path, langs):
+    env = dict(os.environ, OMP_THREAD_LIMIT="1")      # un thread per striscia: le strisce vanno in parallelo
+    out = subprocess.run(["tesseract", str(img_path), "stdout", *langs, "--psm", "11", "tsv"],
+                         capture_output=True, text=True, timeout=60, env=env).stdout
+    words = []
     for r in csv.DictReader(io.StringIO(out), delimiter="\t", quoting=csv.QUOTE_NONE):
         txt = (r.get("text") or "").strip()
         if not txt or float(r.get("conf") or -1) < 40:
             continue
-        key = (r["page_num"], r["block_num"], r["par_num"], r["line_num"])
-        w = {"text": txt, "x": int(r["left"]), "y": int(r["top"]), "w": int(r["width"]),
-             "h": int(r["height"])}
-        lines.setdefault(key, []).append(w)
+        words.append({"text": txt, "x": int(r["left"]), "y": int(r["top"]), "w": int(r["width"]),
+                      "h": int(r["height"]), "line": (r["block_num"], r["par_num"], r["line_num"])})
+    return words
+
+
+def ocr(path, bands=8):
+    """Testo sullo schermo: [{text, x, y, w, h, words}] in pixel dello screenshot.
+    Veloce: metà risoluzione e 8 strisce lette in parallelo."""
+    from concurrent.futures import ThreadPoolExecutor
+    from PIL import Image
+    img = Image.open(path).convert("L")
+    scale = 2 if img.width > 2000 else 1
+    if scale > 1:
+        img = img.resize((img.width // scale, img.height // scale))
+    langs = _langs()
+    h, overlap = img.height, 30
+    step = h // bands
+    jobs = []
+    for i in range(bands):
+        y0 = max(0, i * step - overlap)
+        y1 = h if i == bands - 1 else min(h, (i + 1) * step + overlap)
+        band = CACHE / f"ocr_band{i}.png"
+        img.crop((0, y0, img.width, y1)).save(band)
+        jobs.append((band, y0))
+    with ThreadPoolExecutor(bands) as ex:
+        results = list(ex.map(lambda j: (_ocr_band(j[0], langs), j[1]), jobs))
+    lines, seen = {}, set()
+    for bi, (words, y0) in enumerate(results):
+        for w in words:
+            x, y = w["x"] * scale, (w["y"] + y0) * scale
+            key = (w["text"], round(x / 20), round(y / 20))       # stessa parola nella sovrapposizione
+            if key in seen:
+                continue
+            seen.add(key)
+            ww = {"text": w["text"], "x": x, "y": y, "w": w["w"] * scale, "h": w["h"] * scale}
+            lines.setdefault((bi,) + w["line"], []).append(ww)
     res = []
     for words in lines.values():
         x0 = min(w["x"] for w in words); y0 = min(w["y"] for w in words)
@@ -85,23 +139,25 @@ def find_text(lines, target):
     return (best, score) if score >= 0.6 else (None, score)
 
 
-@tool("look_screen", "Guarda lo schermo dell'utente: fa uno screenshot, legge il testo (OCR) e "
-      "ti mostra l'immagine. Usalo quando l'utente chiede cosa c'è sullo schermo o per capire dove cliccare.",
-      {"question": {"type": "string", "description": "cosa cercare o capire"}})
-def look_screen(ctx, question=""):
+@tool("look_screen", "Guarda lo schermo: fa uno screenshot e te lo mostra. Per cliccare usa le coordinate "
+      "0-1000 dell'immagine (click) oppure click_text per una scritta. Metti read_text=true solo se ti serve "
+      "leggere tanto testo preciso (è più lento).",
+      {"question": {"type": "string", "description": "cosa cercare o capire"},
+       "read_text": {"type": "boolean", "description": "leggi anche il testo con l'OCR (lento)"}})
+def look_screen(ctx, question="", read_text=False):
     ctx.step("📸", "Guardo lo schermo")
     shot = screenshot()
     small = small_copy(shot)
     ctx.image(str(small))
-    ctx.step("🔤", "Leggo il testo (OCR)")
     from PIL import Image
     w, h = Image.open(shot).size
     from . import inputs
     inputs._size = (w, h)
-    lines = ocr(shot)
-    # testo + posizione del centro in coordinate 0-1000 (le stesse del tool click)
+    if not read_text:
+        return ToolResult("Ecco lo schermo (immagine allegata). Coordinate per click: 0-1000.", image=str(small))
+    ctx.step("🔤", "Leggo il testo (OCR)")
     out = []
-    for l in lines:
+    for l in ocr(shot):
         cx = int((l["x"] + l["w"] / 2) / w * 1000)
         cy = int((l["y"] + l["h"] / 2) / h * 1000)
         out.append(f"[{cx},{cy}] {l['text']}")

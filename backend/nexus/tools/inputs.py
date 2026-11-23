@@ -87,6 +87,20 @@ def to_norm(px, py):
     return px / _size[0] * 1000, py / _size[1] * 1000
 
 
+def copy_to_clipboard(text):
+    """Wayland: wl-copy; X11 (es. Linux Mint): xclip o xsel."""
+    import os
+    import shutil
+    if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-copy"):
+        subprocess.run(["wl-copy", "--", text], timeout=5)
+    elif shutil.which("xclip"):
+        subprocess.run(["xclip", "-selection", "clipboard"], input=text, text=True, timeout=5)
+    elif shutil.which("xsel"):
+        subprocess.run(["xsel", "-b", "-i"], input=text, text=True, timeout=5)
+    else:
+        raise RuntimeError("installa wl-clipboard (Wayland) oppure xclip (X11) per scrivere testo")
+
+
 # ------------------------------------------------------------------ tool
 
 @tool("click", "Clicca in un punto dello schermo. Coordinate 0-1000 rispetto allo screenshot "
@@ -171,7 +185,7 @@ def press_keys(ctx, combo):
        "terminal": {"type": "boolean", "description": "true se stai scrivendo in un terminale"}}, ["text"])
 def type_text(ctx, text, enter=False, terminal=False):
     ctx.step("⌨️", f"Scrivo “{text[:40]}”")
-    subprocess.run(["wl-copy", "--", text], timeout=5)
+    copy_to_clipboard(text)
     time.sleep(0.2)
     press("ctrl+shift+v" if terminal else "ctrl+v")
     if enter:

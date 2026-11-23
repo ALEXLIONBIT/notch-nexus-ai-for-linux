@@ -18,7 +18,7 @@ DEFAULTS = {
     "ollama_host": "http://127.0.0.1:11434",
     "model": "qwen3.5:4b",               # entra tutto in una GPU da 6 GB
     "num_ctx": 16384,
-    "max_steps": 10,
+    "max_steps": 12,
     "memory_minutes": 5,
     # provider: dove gira il cervello (vedi providers.py). Vuoto = Ollama locale con "model".
     "providers": [],

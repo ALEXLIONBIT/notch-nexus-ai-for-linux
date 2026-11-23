@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Avvia la UI: su KDE usa PySide6 di sistema (serve per layer-shell), altrimenti quello del venv ui/.venv.
+ROOT="$(dirname "$(readlink -f "$0")")/.."
+if [ -x "$ROOT/ui/.venv/bin/python" ]; then
+    exec "$ROOT/ui/.venv/bin/python" "$ROOT/ui/app.py" "$@"
+fi
+exec /usr/bin/python3 "$ROOT/ui/app.py" "$@"
