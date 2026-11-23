@@ -32,6 +32,20 @@ Con un clic diventa un **casco robot a schermo intero** con il volto a LED, comp
 - **Voce robotica** in italiano (Piper e un filtro robot regolabile) e sottotitoli karaoke sincronizzati
 - **Stop vero**: ferma subito voce, ascolto e ragionamento
 
+## App Android (telefono e tablet)
+
+In `android/` c'è NEXUS per Android: **tieni premuto il tasto laterale** (al posto di Gemini) e si apre il robot.
+- Apre app, siti, YouTube, sveglie, timer, chiamate e SMS, WhatsApp, navigatore, torcia, volume, impostazioni
+- Con l'accessibilità legge lo schermo, tocca pulsanti, scrive, scorre e usa i tasti di sistema
+- Stessi provider del PC (il tuo PC via Tailscale, OpenAI, Claude, Gemini, Groq…, o Ollama in Termux sul telefono)
+- Stesso aspetto: temi, colori, forme ed editor di disegno a LED; layout apposta per i tablet
+
+Scarica l'APK dalle [Release](https://github.com/ALEXLIONBIT/notch-nexus-ai-for-linux/releases). Poi in **Configura**:
+microfono, cervello, assistente digitale (Impostazioni → App → App predefinite → Assistente digitale → NEXUS)
+e accessibilità. Su Samsung: Funzioni avanzate → Tasto laterale → Tieni premuto → Assistente digitale.
+
+Compilare da soli: `cd android && ./gradlew assembleDebug` (serve Android SDK, JDK 17).
+
 ## Provider: dove gira il cervello
 
 Non serve per forza un PC potente. Da **Personalizza → Cervello** aggiungi uno o più provider e scegli quale usare:

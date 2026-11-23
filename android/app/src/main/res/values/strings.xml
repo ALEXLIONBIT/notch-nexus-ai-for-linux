@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_desc">Permette a NEXUS di leggere lo schermo, toccare pulsanti e scrivere nelle app quando glielo chiedi. Funziona solo quando parli con NEXUS.</string>
+</resources>
