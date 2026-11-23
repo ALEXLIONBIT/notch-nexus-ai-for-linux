@@ -42,8 +42,46 @@ def scan_apps():
     return apps
 
 
-def find_app(query):
-    q = ALIASES.get(query.lower().strip(), query.lower().strip())
+def list_browsers():
+    """Browser installati: [{id, name}] (un solo elemento per nome)."""
+    found = {}
+    for d in DIRS:
+        if not d.is_dir():
+            continue
+        for f in sorted(d.glob("*.desktop")):
+            cp = configparser.ConfigParser(interpolation=None, strict=False)
+            try:
+                cp.read(f, encoding="utf-8")
+                e = cp["Desktop Entry"]
+            except Exception:
+                continue
+            if e.get("Type") != "Application" or e.get("NoDisplay", "").lower() == "true":
+                continue
+            mime, cats = e.get("MimeType", ""), e.get("Categories", "")
+            if "x-scheme-handler/http" not in mime and not ("WebBrowser" in cats and "Settings" not in cats):
+                continue
+            name = e.get("Name", f.stem)
+            if f.stem.endswith(".settings") or "settings" in name.lower() or "impostazioni" in name.lower():
+                continue
+            if name not in found or "x-scheme-handler/http" in mime:
+                found[name] = {"id": f.stem, "name": name}
+    return sorted(found.values(), key=lambda b: b["name"].lower())
+
+
+def open_in_browser(ctx, url):
+    """Apre l'url nel browser scelto nelle impostazioni (o in quello di sistema)."""
+    b = ctx.cfg.get("browser") or ""
+    cmd = ["gtk-launch", b, url] if b else ["xdg-open", url]
+    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def find_app(query, cfg=None):
+    raw = query.lower().strip()
+    if raw in ("browser", "internet", "il browser") and cfg and cfg.get("browser"):
+        for a in scan_apps().values():
+            if a["id"] == cfg["browser"]:
+                return a
+    q = ALIASES.get(raw, raw)
     best, best_score = None, 0.0
     for a in scan_apps().values():
         name = a["name"].lower()
@@ -65,7 +103,7 @@ def find_app(query):
 @tool("open_app", "Apre un'applicazione installata sul PC (es. Chrome, Dolphin, Spotify, Konsole, Steam).",
       {"name": {"type": "string", "description": "nome dell'app"}}, ["name"])
 def open_app(ctx, name):
-    app = find_app(name)
+    app = find_app(name, ctx.cfg)
     if not app:
         return f"Non ho trovato nessuna app chiamata '{name}'."
     ctx.step("🚀", f"Apro {app['name']}")
@@ -80,8 +118,7 @@ def open_url(ctx, url):
     if "://" not in url:
         url = "https://" + url
     ctx.step("🌐", f"Apro {url}")
-    subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     start_new_session=True)
+    open_in_browser(ctx, url)
     return f"Ho aperto {url}."
 
 
@@ -90,8 +127,7 @@ def open_url(ctx, url):
 def web_search(ctx, query):
     ctx.step("🔎", f"Cerco: {query}")
     url = "https://www.google.com/search?q=" + urllib.parse.quote(query)
-    subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     start_new_session=True)
+    open_in_browser(ctx, url)
     return f"Ho cercato '{query}' su Google."
 
 

@@ -65,6 +65,8 @@ class Nexus:
         self.bus.emit("state", state=state, detail=detail)
 
     def on_connect(self):
+        from .tools.apps import list_browsers
+        self.bus.emit("browsers", list=list_browsers())
         self.bus.emit("config", config=self.cfg.public())
         self.bus.emit("state", state=self.state, detail=getattr(self, "detail", ""))
 

@@ -13,6 +13,7 @@ Item {
     property string confirmId: ""
     property string confirmText: ""
     property var config: ({})
+    property var browsers: []            // [{id, name}] trovati dal backend
     property bool connected: nexus.connected
     property bool fullscreen: false
     property bool settingsOpen: false
@@ -188,6 +189,7 @@ Item {
             case "image": store.image = "file://" + d.path + "?t=" + Date.now(); break
             case "confirm": store.confirmId = d.id || ""; store.confirmText = d.text || ""; break
             case "config": store.config = d.config; break
+            case "browsers": store.browsers = d.list; break
             case "session":
                 if (d.start) {
                     stepsModel.clear(); store.transcript = ""; store.reply = ""; store.image = ""

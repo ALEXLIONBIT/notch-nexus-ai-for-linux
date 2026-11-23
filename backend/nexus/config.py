@@ -12,7 +12,8 @@ VOICES_DIR = DATA / "voices"
 DEFAULTS = {
     "host": "127.0.0.1",
     "port": 8765,
-    "user_name": "",                     # come ti chiama il robot (opzionale)
+    "user_name": "",
+    "browser": "",                       # id .desktop del browser ("" = quello di sistema)                     # come ti chiama il robot (opzionale)
     # cervello
     "ollama_host": "http://127.0.0.1:11434",
     "model": "qwen3.5:4b",               # entra tutto in una GPU da 6 GB
@@ -56,5 +57,5 @@ class Config(dict):
 
     def public(self):
         keys = ["model", "wake_word", "wake_threshold", "wake_enabled", "voice", "voice_speed",
-                "robot_strength", "language", "screen_scale"]
+                "robot_strength", "language", "screen_scale", "browser"]
         return {k: self[k] for k in keys}

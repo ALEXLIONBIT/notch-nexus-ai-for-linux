@@ -46,7 +46,7 @@ Rectangle {
                 color: chips.current === modelData ? panel.s.ink : panel.chip
                 Behavior on color { ColorAnimation { duration: 120 } }
                 Text {
-                    id: lbl; anchors.centerIn: parent; text: chips.labels[index]
+                    id: lbl; anchors.centerIn: parent; text: chips.labels[index] || ""
                     color: chips.current === modelData ? (panel.s.dark ? "#16181c" : "#ffffff") : panel.s.ink
                     font { family: panel.s.sansFamily; pixelSize: 13; weight: Font.DemiBold }
                 }
@@ -230,6 +230,16 @@ Rectangle {
                     current: panel.s.antenna; onPicked: v => panel.s.antenna = v }
             Heading { text: "Orecchie" }
             Chips { options: ["si", "no"]; labels: ["Sì", "No"]; current: panel.s.ears ? "si" : "no"; onPicked: v => panel.s.ears = (v === "si") }
+
+            // ---------- browser ----------
+            Section { text: "Browser" }
+            Heading { text: "Dove apre siti e ricerche"; Layout.topMargin: 0 }
+            Chips {
+                options: [""].concat(panel.s.browsers.map(b => b.id))
+                labels: ["Predefinito di sistema"].concat(panel.s.browsers.map(b => b.name))
+                current: panel.cfg.browser || ""
+                onPicked: v => panel.sendCfg("browser", v)
+            }
 
             // ---------- voce ----------
             Section { text: "Voce" }
