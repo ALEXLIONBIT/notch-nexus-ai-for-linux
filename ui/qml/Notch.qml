@@ -11,20 +11,31 @@ Item {
     readonly property var s: store
     readonly property bool busy: (s.st !== "idle" && s.st !== "loading") || s.confirmText !== "" || s.saying
     property bool pinned: false
-    readonly property bool expanded: hover.hovered || busy || pinned || input.activeFocus
+    // si apre solo se resti sopra la pillola per un attimo (niente aperture per sbaglio)
+    property bool hoverOpen: false
+    readonly property bool expanded: hoverOpen || busy || pinned || input.activeFocus
                                      || (s.reply !== "" && replyHold.running)
 
     readonly property real pillW: expanded ? 640 : 190
     readonly property real pillH: expanded ? Math.min(460, body.implicitHeight + header.height + 34) : 36
-    implicitWidth: 640 + 60
-    implicitHeight: pillH + 40
+    // la finestra è grande solo quanto la pillola (+ ombra): fuori si clicca normalmente
+    implicitWidth: Math.max(pillBox.width, pillW) + 36
+    implicitHeight: Math.max(pillBox.height, pillH) + 22
 
-    HoverHandler { id: hover }
+    Timer { id: openDelay; interval: 450; onTriggered: notch.hoverOpen = true }
+    Timer { id: closeDelay; interval: 500; onTriggered: notch.hoverOpen = false }
     Timer { id: replyHold; interval: 6000 }
     Connections { target: notch.s; function onReplyChanged() { replyHold.restart() } }
 
     Item {
         id: pillBox
+        HoverHandler {
+            id: hover
+            onHoveredChanged: {
+                if (hovered) { closeDelay.stop(); if (!notch.hoverOpen) openDelay.restart() }
+                else { openDelay.stop(); closeDelay.restart() }
+            }
+        }
         width: notch.pillW; height: notch.pillH
         anchors.horizontalCenter: parent.horizontalCenter
         Behavior on width { SpringAnimation { spring: 4.5; damping: 0.42; epsilon: 0.5 } }

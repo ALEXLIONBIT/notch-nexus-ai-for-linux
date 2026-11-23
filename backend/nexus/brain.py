@@ -3,7 +3,6 @@ import re
 import time
 from datetime import datetime
 
-import ollama
 
 SYSTEM = """Sei NEXUS, un assistente robot futuristico che vive dentro il computer {owner} \
 (Linux, desktop KDE Plasma). Parli SEMPRE in italiano, in modo amichevole e diretto.
@@ -18,6 +17,9 @@ Hai dei tool per agire DAVVERO sul PC: usali invece di spiegare come fare.
   type_text per scrivere, press_keys per le scorciatoie, scroll, drag, move_mouse.
 - Per azioni sullo schermo segui sempre: look_screen → click/type → look_screen per controllare che abbia funzionato.
 - Per scrivere in un'app: prima clicca nel campo giusto, poi type_text.
+- Finestre: list_windows, place_window (sinistra/destra/quarti), split_screen per affiancarne due,
+  window_action per attivare/massimizzare/ridurre/chiudere. Le app non aperte vengono aperte da sole.
+- TV: list_tvs per vedere le TV, cast_screen per condividere lo schermo su una TV, stop_cast per fermare.
 - organize_desktop e run_shell chiedono conferma da soli: non chiedere conferma tu prima.
 Non inventare mai risultati: di' solo quello che i tool hanno restituito.
 Data e ora attuali: {now}."""
@@ -41,43 +43,29 @@ def drop_courtesy(reply):
     return " ".join(parts)
 
 
-class Cancelled(Exception):
-    pass
+from .providers import Cancelled, make as make_provider  # noqa: E402
 
 
 class Brain:
     def __init__(self, cfg, tools, ctx):
         self.cfg, self.tools, self.ctx = cfg, tools, ctx
-        self.client = ollama.Client(host=cfg["ollama_host"])
         self.history = []
         self.last = 0.0
         self.cancelled = False
 
+    def provider(self):
+        """Il provider attivo (Ollama locale/remoto o API compatibile OpenAI)."""
+        return make_provider(self.cfg.active_provider(), self.cfg)
+
     def _chat(self, messages):
         """Chiamata in streaming: si può interrompere a metà con stop."""
-        opts = {"num_ctx": int(self.cfg.get("num_ctx", 16384)), "temperature": 0.3}
-        if self.cfg.get("num_gpu") is not None:
-            opts["num_gpu"] = int(self.cfg["num_gpu"])
-        kw = dict(model=self.cfg["model"], messages=messages, tools=self.tools.schemas,
-                  options=opts, keep_alive="30m", stream=True)
-        try:
-            stream = self.client.chat(think=False, **kw)
-        except (ollama.ResponseError, TypeError):
-            stream = self.client.chat(**kw)
-        content, calls = "", []
-        for part in stream:
-            if self.cancelled:
-                stream.close() if hasattr(stream, "close") else None
-                raise Cancelled()
-            content += part.message.content or ""
-            calls.extend(part.message.tool_calls or [])
-        return content, calls
+        return self.provider().chat(messages, self.tools.schemas, lambda: self.cancelled)
 
     def run(self, user_text):
         try:
             return self._run(user_text)
-        except ollama.ResponseError as e:
-            if "context" not in str(e).lower():
+        except Exception as e:
+            if "context" not in str(e).lower() or isinstance(e, Cancelled):
                 raise
             self.history = []                       # contesto pieno: riparte con memoria pulita
             return self._run(user_text)
@@ -109,8 +97,7 @@ class Brain:
                 raise Cancelled()
             self._only_last_image(msgs)
             content, calls = self._chat(msgs)
-            msgs.append({"role": "assistant", "content": content,
-                         **({"tool_calls": [c.model_dump() for c in calls]} if calls else {})})
+            msgs.append({"role": "assistant", "content": content, **({"tool_calls": calls} if calls else {})})
             if not calls:
                 reply = drop_courtesy(content) or "Fatto."
                 # anti-bugia: ha detto di aver agito ma non ha chiamato nessun tool
@@ -125,9 +112,9 @@ class Brain:
             for c in calls:
                 if self.cancelled:
                     raise Cancelled()
-                name, args = c.function.name, dict(c.function.arguments or {})
+                name, args = c["name"], c["arguments"]
                 res = self.tools.call(name, args)
-                msgs.append({"role": "tool", "content": res.text, "tool_name": name})
+                msgs.append({"role": "tool", "content": res.text, "name": name, "tool_call_id": c["id"]})
                 if res.image:
                     msgs.append({"role": "user", "content": "Ecco lo screenshot attuale dello schermo.",
                                  "images": [res.image]})

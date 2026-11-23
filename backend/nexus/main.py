@@ -66,7 +66,9 @@ class Nexus:
 
     def on_connect(self):
         from .tools.apps import list_browsers
+        from .providers import PRESETS
         self.bus.emit("browsers", list=list_browsers())
+        self.bus.emit("presets", presets=PRESETS)
         self.bus.emit("config", config=self.cfg.public())
         self.bus.emit("state", state=self.state, detail=getattr(self, "detail", ""))
 
@@ -94,6 +96,8 @@ class Nexus:
             self.bus.emit("stt_result", text=text, seconds=round(time.time() - t0, 2), device=self.stt.device)
         elif t == "config":
             self.apply_config(msg.get("config", {}))
+        elif t in ("provider_save", "provider_delete", "provider_models", "provider_test"):
+            threading.Thread(target=self.provider_command, args=(t, msg), daemon=True).start()
 
     def stop(self):
         """Ferma TUTTO subito: voce, ascolto, ragionamento, conferme."""
@@ -114,9 +118,13 @@ class Nexus:
     def apply_config(self, new):
         old = dict(self.cfg)
         for k, v in new.items():
-            if k in self.cfg.public():
+            if k == "model":                       # vecchia UI: cambia il modello del provider attivo
+                self.cfg.active_provider()["model"] = v
+            elif k in self.cfg.public() and k != "providers":
                 self.cfg[k] = v
         self.cfg.save()
+        if self.stt and (old["stt_mode"] != self.cfg["stt_mode"] or old["stt_model"] != self.cfg["stt_model"]):
+            self.stt.reset()
         if self.voice and old["voice"] != self.cfg["voice"]:
             self.voice.load()
         if self.ears and old["wake_word"] != self.cfg["wake_word"]:
@@ -124,6 +132,52 @@ class Nexus:
         self.bus.emit("config", config=self.cfg.public())
         if self.state == "idle":
             self.set_state("idle", self._idle_text())
+
+    # ---------- provider ----------
+    def provider_command(self, t, msg):
+        from .providers import make, PRESETS
+        cfg = self.cfg
+        if t == "provider_save":
+            p = dict(msg.get("provider", {}))
+            old = cfg.get_provider(p.get("id")) if p.get("id") else None
+            if not p.get("api_key") and old:             # chiave vuota = tieni quella salvata
+                p["api_key"] = old.get("api_key", "")
+            p.setdefault("kind", PRESETS.get(p.get("preset"), {}).get("kind", "openai"))
+            p.pop("api_key_hint", None)
+            if old:
+                old.update(p)
+            else:
+                p["id"] = p.get("id") or uuid.uuid4().hex[:8]
+                cfg["providers"].append(p)
+            if msg.get("select"):
+                cfg["provider"] = p["id"]
+            cfg.save()
+            self.bus.emit("config", config=cfg.public())
+            self.bus.emit("provider_result", ok=True, text=f"Salvato: {p.get('name')}")
+        elif t == "provider_delete":
+            pid = msg.get("id")
+            if len(cfg["providers"]) > 1:
+                cfg["providers"] = [p for p in cfg["providers"] if p["id"] != pid]
+                if cfg["provider"] == pid:
+                    cfg["provider"] = cfg["providers"][0]["id"]
+                cfg.save()
+            self.bus.emit("config", config=cfg.public())
+        else:
+            # provider da provare: quello salvato (per id) con eventuali modifiche non ancora salvate
+            p = dict(cfg.get_provider(msg.get("id")) or {})
+            draft = msg.get("provider") or {}
+            p.update({k: v for k, v in draft.items() if v not in ("", None) and k != "api_key_hint"})
+            p.setdefault("kind", PRESETS.get(p.get("preset"), {}).get("kind", "openai"))
+            try:
+                models = make(p, cfg).list_models()
+                if t == "provider_models":
+                    self.bus.emit("provider_models", id=msg.get("id"), models=models[:300])
+                else:
+                    ok_model = not p.get("model") or p["model"] in models or not models
+                    self.bus.emit("provider_result", ok=True, text=f"Connesso: {len(models)} modelli disponibili"
+                                  + ("" if ok_model else f" (attenzione: '{p['model']}' non è nella lista)"))
+            except Exception as e:
+                self.bus.emit("provider_result", ok=False, text=f"Connessione fallita: {str(e)[:160]}")
 
     # ---------- sessione di conversazione ----------
     def on_wake(self):

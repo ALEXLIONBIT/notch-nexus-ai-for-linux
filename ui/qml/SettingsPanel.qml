@@ -20,6 +20,7 @@ Rectangle {
 
     // quale colore si sta modificando: "led" | "accent" | "shell" | "bg"
     property string editing: ""
+    property bool providerOpen: false
 
     component Heading: Text {
         color: panel.s.inkSoft
@@ -264,15 +265,101 @@ Rectangle {
                 current: (panel.cfg.wake_enabled ?? true) ? "on" : "off"
                 onPicked: v => panel.sendCfg("wake_enabled", v === "on")
             }
-            Heading { text: "Cervello (modello Ollama)" }
+            // ---------- cervello ----------
+            Section { text: "Cervello" }
+            Text {
+                Layout.preferredWidth: col.width; wrapMode: Text.Wrap
+                text: "Dove gira l'intelligenza. Puoi usare questo PC, un PC più potente in casa o via Tailscale, oppure un servizio online con chiave API."
+                color: panel.s.inkSoft; font { family: panel.s.sansFamily; pixelSize: 12 }
+            }
+            Repeater {
+                model: panel.cfg.providers || []
+                Rectangle {
+                    readonly property bool active: panel.cfg.provider === modelData.id
+                    Layout.preferredWidth: col.width; Layout.preferredHeight: 62
+                    radius: 16
+                    color: active ? (panel.s.dark ? "#2f353e" : "#f2f6f9") : "transparent"
+                    border.width: active ? 2 : 1
+                    border.color: active ? panel.s.ink : (panel.s.dark ? "#33383f" : "#e3e7eb")
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                        onClicked: panel.sendCfg("provider", modelData.id) }
+                    RowLayout {
+                        anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 8; spacing: 10
+                        Rectangle { width: 14; height: 14; radius: 7; color: "transparent"; border.width: 2; border.color: panel.s.ink
+                            Rectangle { visible: parent.parent.parent.active; anchors.centerIn: parent; width: 6; height: 6; radius: 3; color: panel.s.ink } }
+                        ColumnLayout {
+                            spacing: 1; Layout.fillWidth: true; Layout.preferredWidth: 1
+                            Text { text: modelData.name; color: panel.s.ink; elide: Text.ElideRight; Layout.fillWidth: true
+                                   font { family: panel.s.sansFamily; pixelSize: 14; weight: Font.Bold } }
+                            Text { text: (modelData.model || "—") + "  ·  " + modelData.base_url.replace(/^https?:\/\//, "")
+                                   color: panel.s.inkSoft; elide: Text.ElideRight; Layout.fillWidth: true
+                                   font { family: panel.s.sansFamily; pixelSize: 11 } }
+                        }
+                        IconButton { text: "Modifica"; size: 30; tint: panel.s.ink; fill: panel.chip
+                            onClicked: { editor.open(modelData); panel.providerOpen = true } }
+                        IconButton { glyph: "close"; size: 30; tint: panel.s.inkSoft; tip: "Elimina"
+                            visible: (panel.cfg.providers || []).length > 1
+                            onClicked: panel.s.send("provider_delete", { id: modelData.id }) }
+                    }
+                }
+            }
+            IconButton {
+                Layout.preferredWidth: col.width
+                text: "+ Aggiungi provider"; size: 40; tint: panel.s.ink; fill: panel.chip
+                onClicked: { editor.open(null); panel.providerOpen = true }
+            }
+
+            // ---------- trascrizione ----------
+            Section { text: "Trascrizione" }
+            Chips {
+                options: ["turbo", "small", "remote"]
+                labels: ["Su questo PC, precisa", "Su questo PC, leggera", "Online (API)"]
+                current: panel.cfg.stt_mode === "remote" ? "remote" : (panel.cfg.stt_model === "small" ? "small" : "turbo")
+                onPicked: v => {
+                    if (v === "remote") panel.s.send("config", { config: { stt_mode: "remote" } })
+                    else panel.s.send("config", { config: { stt_mode: "local", stt_model: v === "small" ? "small" : "large-v3-turbo" } })
+                }
+            }
+            Text {
+                visible: panel.cfg.stt_mode === "remote"
+                Layout.preferredWidth: col.width; wrapMode: Text.Wrap
+                text: "Usa il provider scelto qui sotto (OpenAI o Groq). Per Groq il modello è whisper-large-v3-turbo."
+                color: panel.s.inkSoft; font { family: panel.s.sansFamily; pixelSize: 12 }
+            }
+            Chips {
+                visible: panel.cfg.stt_mode === "remote"
+                options: (panel.cfg.providers || []).filter(p => p.kind !== "ollama").map(p => p.id)
+                labels: (panel.cfg.providers || []).filter(p => p.kind !== "ollama").map(p => p.name)
+                current: panel.cfg.stt_provider || ""
+                onPicked: v => panel.sendCfg("stt_provider", v)
+            }
             TextField {
-                Layout.fillWidth: true; text: panel.cfg.model || ""
-                color: panel.s.ink; font { family: panel.s.sansFamily; pixelSize: 14 }
+                visible: panel.cfg.stt_mode === "remote"
+                Layout.preferredWidth: col.width; text: panel.cfg.stt_remote_model || "whisper-1"
+                color: panel.s.ink; font { family: panel.s.sansFamily; pixelSize: 13 }
                 leftPadding: 14
-                background: Rectangle { implicitHeight: 40; radius: 20; color: panel.chip }
-                onEditingFinished: if (text.trim()) panel.sendCfg("model", text.trim())
+                background: Rectangle { implicitHeight: 38; radius: 19; color: panel.chip }
+                onEditingFinished: if (text.trim()) panel.sendCfg("stt_remote_model", text.trim())
             }
         }
+    }
+
+    // velo + modulo provider
+    Rectangle {
+        anchors.fill: parent; radius: panel.radius
+        color: Qt.rgba(0, 0, 0, 0.35); visible: panel.providerOpen
+        MouseArea { anchors.fill: parent; onClicked: panel.providerOpen = false }
+    }
+    ProviderEditor {
+        id: editor
+        store: panel.s
+        visible: panel.providerOpen
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: 40
+        width: parent.width - 28
+        onClosed: panel.providerOpen = false
+        Timer { running: panel.s.providerEditorRequest; interval: 2500
+            onTriggered: { editor.open(null); editor.pickPreset("groq"); panel.providerOpen = true } }
     }
 
     ColorPicker {

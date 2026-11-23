@@ -16,14 +16,34 @@ Con un clic diventa un **casco robot a schermo intero** con il volto a LED, comp
 ## Cosa sa fare
 
 - **Parola di attivazione** ("Hey Jarvis", "Alexa"…) con openWakeWord, oppure pulsante o scorciatoia (`nexus-ctl listen`)
-- **Capisce l'italiano** con Whisper large-v3-turbo e capisce da solo quando hai finito di parlare (Silero VAD)
+- **Capisce l'italiano** con Whisper large-v3-turbo: volume normalizzato, parole suggerite (nomi delle app, TV),
+  pre-ascolto per non perdere le prime parole; capisce da solo quando hai finito di parlare (Silero VAD)
 - **Cervello locale**: Qwen 3.5 con visione e tool, tramite Ollama (4B entra tutto in una GPU da 6 GB)
 - **Vede lo schermo**: screenshot e OCR con le posizioni dei testi, così sa dove cliccare
 - **Mouse e tastiera su Wayland**: dispositivi virtuali uinput con coordinate assolute, precisi a ogni scala
 - **Azioni**: apre app, siti e cartelle, cerca sul web, riordina il desktop (con conferma e annulla), comandi da
   terminale (sempre con conferma), volume, batteria
+- **Finestre**: "metti Firefox a destra e LibreOffice Writer a sinistra", massimizza, riduci, chiudi
+  (tramite script KWin; le app non aperte vengono aperte da sole)
+- **Schermo sulla TV**: "condividi lo schermo sulla TV Cucina". Trova le TV in rete (Miracast, Chromecast) e usa
+  GNOME Network Displays (Flatpak `org.gnome.NetworkDisplays`)
 - **Voce robotica** in italiano (Piper e un filtro robot regolabile) e sottotitoli karaoke sincronizzati
 - **Stop vero**: ferma subito voce, ascolto e ragionamento
+
+## Provider: dove gira il cervello
+
+Non serve per forza un PC potente. Da **Personalizza → Cervello** aggiungi uno o più provider e scegli quale usare:
+
+| Provider | Quando usarlo |
+|---|---|
+| **Ollama su questo PC** | tutto offline, se hai una GPU |
+| **Ollama su un altro PC** (in casa o via **Tailscale**, es. `http://100.x.y.z:11434`) | laptop leggero e PC fisso potente. Sull'altro PC avvia Ollama con `OLLAMA_HOST=0.0.0.0` |
+| **OpenAI, Anthropic, Google Gemini, Groq, OpenRouter** | con chiave API, per qualsiasi PC |
+| **LM Studio, vLLM, llama.cpp** o qualsiasi server compatibile OpenAI | server tuo in rete |
+
+Voce, finestre, mouse e TV girano sempre sul tuo PC; solo il "ragionamento" va al provider.
+Anche la **trascrizione** può essere precisa (Whisper turbo), leggera (Whisper small) oppure online (OpenAI/Groq).
+Le chiavi API restano solo in `config.json` sul tuo PC, che non va mai su GitHub.
 
 ## Personalizzazione
 

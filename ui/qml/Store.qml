@@ -14,6 +14,10 @@ Item {
     property string confirmText: ""
     property var config: ({})
     property var browsers: []            // [{id, name}] trovati dal backend
+    property var presets: ({})           // tipi di provider (Ollama, OpenAI, Groq…)
+    property var providerModels: []      // modelli caricati dal provider in modifica
+    property string providerMsg: ""
+    property bool providerOk: true
     property bool connected: nexus.connected
     property bool fullscreen: false
     property bool settingsOpen: false
@@ -56,6 +60,7 @@ Item {
         var p = ledPalette.slice(); p[i - 2] = c.toString(); paletteStr = p.join(",")
     }
     property bool editorOpen: false
+    property bool providerEditorRequest: false
     readonly property int eyeCols: 9
     readonly property int eyeRows: 9
     readonly property int mouthCols: 15
@@ -163,6 +168,7 @@ Item {
         if (a.indexOf("--face") >= 0) fullscreen = true
         if (a.indexOf("--settings") >= 0) settingsOpen = true
         if (a.indexOf("--editor") >= 0) editorOpen = true
+        if (a.indexOf("--provider-editor") >= 0) { settingsOpen = true; providerEditorRequest = true }
     }
 
     Connections {
@@ -190,6 +196,9 @@ Item {
             case "confirm": store.confirmId = d.id || ""; store.confirmText = d.text || ""; break
             case "config": store.config = d.config; break
             case "browsers": store.browsers = d.list; break
+            case "presets": store.presets = d.presets; break
+            case "provider_models": store.providerModels = d.models; store.providerMsg = d.models.length + " modelli trovati"; store.providerOk = true; break
+            case "provider_result": store.providerMsg = d.text; store.providerOk = d.ok; break
             case "session":
                 if (d.start) {
                     stepsModel.clear(); store.transcript = ""; store.reply = ""; store.image = ""

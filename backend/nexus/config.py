@@ -20,6 +20,13 @@ DEFAULTS = {
     "num_ctx": 16384,
     "max_steps": 10,
     "memory_minutes": 5,
+    # provider: dove gira il cervello (vedi providers.py). Vuoto = Ollama locale con "model".
+    "providers": [],
+    "provider": "local",
+    # trascrizione: "local" (Whisper su questo PC) oppure "remote" (API del provider scelto)
+    "stt_mode": "local",
+    "stt_provider": "",
+    "stt_remote_model": "whisper-1",
     # orecchie
     "wake_word": "hey_jarvis",          # hey_jarvis | alexa | hey_mycroft | hey_rhasspy
     "wake_threshold": 0.5,
@@ -50,6 +57,20 @@ class Config(dict):
                 print("config.json non valido:", e)
         for d in (DATA, CACHE, VOICES_DIR):
             d.mkdir(parents=True, exist_ok=True)
+        if not self["providers"]:                      # migrazione: il vecchio setup diventa il provider "local"
+            from .providers import DEFAULT_PROVIDER
+            p = dict(DEFAULT_PROVIDER, base_url=self["ollama_host"], model=self["model"])
+            self["providers"] = [p]
+            self["provider"] = "local"
+
+    def active_provider(self):
+        for p in self["providers"]:
+            if p["id"] == self["provider"]:
+                return p
+        return self["providers"][0]
+
+    def get_provider(self, pid):
+        return next((p for p in self["providers"] if p["id"] == pid), None)
 
     def save(self):
         with _lock:
@@ -57,5 +78,10 @@ class Config(dict):
 
     def public(self):
         keys = ["model", "wake_word", "wake_threshold", "wake_enabled", "voice", "voice_speed",
-                "robot_strength", "language", "screen_scale", "browser"]
-        return {k: self[k] for k in keys}
+                "robot_strength", "language", "screen_scale", "browser", "provider", "stt_mode", "stt_provider",
+                "stt_remote_model", "stt_model"]
+        from .providers import public as pub
+        out = {k: self[k] for k in keys}
+        out["providers"] = [pub(p) for p in self["providers"]]
+        out["model"] = self.active_provider().get("model", "")
+        return out

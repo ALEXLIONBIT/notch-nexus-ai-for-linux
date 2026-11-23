@@ -29,7 +29,7 @@ def tool(name, description, params=None, required=()):
 class Tools:
     def __init__(self, ctx):
         self.ctx = ctx
-        from . import apps, desktop, screen, inputs, shell, system  # noqa: F401  (registrano i tool)
+        from . import apps, desktop, screen, inputs, shell, system, windows, cast  # noqa: F401  (registrano i tool)
 
     @property
     def schemas(self):

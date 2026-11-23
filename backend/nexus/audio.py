@@ -1,4 +1,5 @@
 """Microfono sempre acceso: parola di attivazione + registrazione del comando."""
+import collections
 import queue
 import threading
 import time
@@ -17,6 +18,7 @@ class Ears:
         self.muted = False            # true mentre NEXUS parla
         self.noise = 200.0            # rumore di fondo stimato
         self._rec = None              # dict quando sta registrando
+        self.preroll = collections.deque(maxlen=10)   # ~0,8 s di audio prima dell'inizio: non perde le prime parole
         self._cool = 0.0
         self.oww = None
         self.vad = None
@@ -65,6 +67,7 @@ class Ears:
                     self.bus.emit("level", v=min(1.0, rms / 3000))
                     last_level = now
                 continue
+            self.preroll.append(chunk)
             # rumore di fondo (media lenta)
             self.noise = 0.98 * self.noise + 0.02 * min(rms, 2000)
             if self.oww is None or self.muted or not self.cfg["wake_enabled"]:
@@ -73,6 +76,7 @@ class Ears:
             if scores and max(scores.values()) >= self.cfg["wake_threshold"] and time.time() > self._cool:
                 self._cool = time.time() + 2.0
                 self.oww.reset()
+                self.preroll.clear()          # niente "Hey Jarvis" nella frase
                 self.on_wake()
 
     # ---------- registrazione comando ----------
@@ -104,13 +108,12 @@ class Ears:
             self._rec = None
             rec["done"].set()
 
-    def record(self, wait=4.0, silence=0.8, max_s=20.0):
+    def record(self, wait=4.0, silence=1.1, max_s=25.0):
         """Registra finché l'utente parla. Ritorna int16 array o None se silenzio."""
-        while not self.q.empty():
-            self.q.get_nowait()
+        pre = list(self.preroll)
         if self.vad is not None:
             self.vad.reset_states()
-        rec = {"buf": [], "speech": False, "voiced": 0, "t0": time.time(), "last_voice": time.time(),
+        rec = {"buf": pre, "speech": False, "voiced": 0, "t0": time.time(), "last_voice": time.time(),
                "wait": wait, "silence": silence, "max": max_s, "done": threading.Event()}
         self._rec = rec
         rec["done"].wait(max_s + 2)

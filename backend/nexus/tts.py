@@ -95,6 +95,7 @@ class Voice:
         finally:
             if levels:
                 self.bus.emit("level", v=0)
+            self.ears.preroll.clear()         # non riascoltare la propria voce
             self.ears.muted = False
 
     def stop(self):
