@@ -19,7 +19,8 @@ if IS_WIN:
 else:
     DATA = Path.home() / ".local/share/nexus"
     CACHE = Path.home() / ".cache/nexus"
-    CONFIG_FILE = ROOT / "config.json"
+    # AppImage: la cartella del programma è in sola lettura, le impostazioni vanno in ~/.config
+    CONFIG_FILE = (Path.home() / ".config/nexus/config.json") if getattr(sys, "frozen", False) else ROOT / "config.json"
 VOICES_DIR = DATA / "voices"
 
 DEFAULTS = {
@@ -97,7 +98,7 @@ class Config(dict):
     def public(self):
         keys = ["model", "wake_word", "wake_threshold", "wake_enabled", "voice", "voice_speed",
                 "robot_strength", "language", "screen_scale", "browser", "auto_mode", "provider", "stt_mode", "stt_provider",
-                "stt_remote_model", "stt_model"] + (["setup_done"] if IS_WIN else [])
+                "stt_remote_model", "stt_model"] + (["setup_done"] if IS_WIN or getattr(sys, "frozen", False) else [])
         from .providers import public as pub
         out = {k: self[k] for k in keys}
         out["providers"] = [pub(p) for p in self["providers"]]

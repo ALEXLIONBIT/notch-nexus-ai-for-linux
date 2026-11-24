@@ -7,8 +7,9 @@ from pathlib import Path
 
 HERE = Path(os.environ.get("NEXUS_UI_DIR") or Path(__file__).resolve().parent)
 LAYER_QML = Path("/usr/lib/qt6/qml/org/kde/layershell")
+# nell'AppImage il Qt incluso non può caricare il layer-shell di sistema (versioni diverse): finestre normali
 USE_LAYER = os.environ.get("XDG_SESSION_TYPE") == "wayland" and LAYER_QML.exists() \
-    and os.environ.get("NEXUS_NO_LAYERSHELL") != "1"
+    and os.environ.get("NEXUS_NO_LAYERSHELL") != "1" and not getattr(sys, "frozen", False)
 if USE_LAYER:
     os.environ["QT_WAYLAND_SHELL_INTEGRATION"] = "layer-shell"
 

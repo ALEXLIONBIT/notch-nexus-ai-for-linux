@@ -1,2 +1,2 @@
 """NEXUS: assistente vocale con notch e casco robot."""
-__version__ = "0.1.0"          # versione dell app Windows (le release windows-vX.Y.Z)
+__version__ = "0.2.0"          # versione delle app impacchettate (release windows-vX.Y.Z e linux-vX.Y.Z)

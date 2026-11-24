@@ -1,3 +1,5 @@
+**Novità 0.2.0**: stessa base della nuova app Linux in un file (AppImage), aggiornamenti e primo avvio condivisi; parte anche senza microfono o casse; Tailscale nelle impostazioni.
+
 Prima versione di **NEXUS per Windows 10/11**: lo stesso robot del PC Linux, con notch in alto, casco a LED e voce.
 
 **Installazione:** scarica `NEXUS-Setup-*.exe` e aprilo. Non servono permessi da amministratore. Windows potrebbe

@@ -8,6 +8,9 @@ IS_WIN = sys.platform == "win32"
 FROZEN = bool(getattr(sys, "frozen", False))        # app impacchettata (PyInstaller)
 # su Windows i processi figli non devono aprire finestre nere della console
 NO_WINDOW = 0x08000000 if IS_WIN else 0
+APPIMAGE = os.environ.get("APPIMAGE", "")            # percorso del file .AppImage (app Linux impacchettata)
+PACKAGED = FROZEN                                     # app impacchettata: aggiornamenti dalle release GitHub
+RELEASE_PREFIX = "windows-v" if IS_WIN else "linux-v"
 
 
 def run(cmd, **kw):

@@ -1,4 +1,6 @@
-"""Prova automatica di NEXUS per Windows: NEXUS.exe --selftest
+"""Prova automatica delle app impacchettate: NEXUS.exe --selftest (Windows) e NEXUS.AppImage --selftest (Linux)
+
+Su Linux (CI senza desktop) si saltano le prove che pilotano finestre, Blocco note e PowerShell.
 
 Prova i pezzi veri sul Windows dove gira (GitHub Actions o un PC): app, finestre, mouse e tastiera, OCR,
 PowerShell, voce, trascrizione, wake word, cervello (con un finto provider OpenAI) e interfaccia QML.
@@ -16,6 +18,11 @@ RESULTS = {}
 OUT = Path(os.environ.get("NEXUS_SELFTEST_FILE") or Path.cwd() / "selftest.json")
 SHOTS = Path(os.environ.get("NEXUS_SELFTEST_SHOTS") or Path.cwd())
 OPTIONAL = {"winrt_media", "radio", "camera", "volume", "brightness"}   # dipendono dall'hardware del PC
+IS_WIN = sys.platform == "win32"
+WIN_ONLY = {"folders", "apps_scan", "open_app_and_windows", "type_and_ocr", "click_text", "window_actions",
+            "look_screen", "powershell", "clipboard", "volume", "winrt_media", "radio"}
+if not IS_WIN:
+    OPTIONAL |= {"files"}                     # il cestino dipende dal desktop
 
 
 WATCHDOG = 300           # secondi: una prova che si pianta salva dove si è fermata e chiude
@@ -23,6 +30,8 @@ WATCHDOG = 300           # secondi: una prova che si pianta salva dove si è fer
 
 def check(name):
     def deco(fn):
+        if not IS_WIN and name in WIN_ONLY:
+            return fn
         import faulthandler
         t0 = time.time()
         hang = open(SHOTS / f"selftest-hang-{name}.txt", "w")
@@ -292,7 +301,7 @@ def main():
         srv.shutdown()
         assert reply == "Il PC sta benissimo.", reply
         sysmsg = calls[0]["messages"][0]["content"]
-        assert "Windows" in sysmsg, sysmsg[:200]
+        assert ("Windows" if IS_WIN else "Linux") in sysmsg, sysmsg[:200]
         return f"risposta: {reply} ({len(calls)} chiamate, tool usato: system_info)"
 
     @check("update_check")

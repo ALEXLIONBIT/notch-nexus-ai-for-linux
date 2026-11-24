@@ -1,4 +1,4 @@
-"""Primo avvio su Windows: installa Ollama e scarica un cervello adatto a questo PC."""
+"""Primo avvio (Windows e AppImage Linux): installa Ollama e scarica un cervello adatto a questo PC."""
 import json
 import os
 import shutil
@@ -6,7 +6,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-from .osys import run, popen
+from .osys import run, popen, IS_WIN
 
 OLLAMA_URL = "http://127.0.0.1:11434"
 
@@ -15,6 +15,9 @@ def find_ollama():
     exe = shutil.which("ollama")
     if exe:
         return exe
+    if not IS_WIN:
+        p = Path("/usr/local/bin/ollama")
+        return str(p) if p.exists() else None
     for base in (os.environ.get("LOCALAPPDATA", ""), os.environ.get("ProgramFiles", "")):
         p = Path(base) / "Programs/Ollama/ollama.exe" if base else None
         if p and p.exists():
@@ -53,6 +56,16 @@ def pick_model():
 
 
 def install_ollama(status):
+    if not IS_WIN:
+        # script ufficiale di Ollama (servizio di sistema): pkexec chiede la password in una finestra
+        if not shutil.which("pkexec"):
+            raise RuntimeError("installa Ollama da ollama.com (serve la password di amministratore) e riprova")
+        status("Installo Ollama (ti chiedo la password)…")
+        r = run(["pkexec", "sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],
+                capture_output=True, text=True, timeout=1800)
+        if not find_ollama():
+            raise RuntimeError("Ollama non installato: " + ((r.stderr or r.stdout or "annullato")[-200:]))
+        return
     if shutil.which("winget"):
         status("Installo Ollama con winget…")
         r = run(["winget", "install", "-e", "--id", "Ollama.Ollama", "--silent", "--accept-package-agreements",

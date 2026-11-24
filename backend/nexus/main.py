@@ -9,7 +9,7 @@ import uuid
 
 from .config import Config
 from .bus import Bus
-from .osys import IS_WIN, FROZEN
+from .osys import IS_WIN, FROZEN, PACKAGED, APPIMAGE, RELEASE_PREFIX
 
 RELEASES = "https://api.github.com/repos/ALEXLIONBIT/notch-nexus-ai-for-linux/releases"
 
@@ -66,7 +66,7 @@ class Nexus:
         threading.Thread(target=self.update_check, daemon=True).start()
         self.set_state("idle", self._idle_text())
         print("NEXUS pronto.")
-        if not FROZEN or not IS_WIN:
+        if not FROZEN:
             threading.Event().wait()          # nell'app Windows il backend gira in un thread e la UI tiene vivo il processo
 
     def _idle_text(self):
@@ -80,9 +80,9 @@ class Nexus:
         self.bus.emit("state", state=state, detail=detail)
 
     def on_connect(self):
-        if IS_WIN:
+        if IS_WIN or PACKAGED:
             from . import __version__
-            self.bus.emit("platform", os="windows", version=__version__)
+            self.bus.emit("platform", os="windows" if IS_WIN else "linux", version=__version__)
         from .tools.apps import list_browsers
         from .providers import PRESETS
         self.bus.emit("browsers", list=list_browsers())
@@ -176,7 +176,7 @@ class Nexus:
         return "Automode attivo: faccio tutto senza chiederti conferma." if self.cfg["auto_mode"] \
             else "Modalità manuale: ti chiederò conferma prima delle cose importanti."
 
-    # ---------- primo avvio su Windows: dove gira il cervello ----------
+    # ---------- primo avvio (Windows e AppImage): dove gira il cervello ----------
     def setup_choice(self, choice):
         """'local' = installa Ollama (winget) e scarica un modello adatto al PC; 'provider' = lo sceglie l'utente."""
         def status(text, pct=-1, done=False, error=""):
@@ -205,12 +205,12 @@ class Nexus:
             traceback.print_exc()
             status("", error=str(e)[:200])
 
-    # ---------- aggiornamenti (git su Linux, release GitHub su Windows) ----------
+    # ---------- aggiornamenti (git dal sorgente, release GitHub per Windows e AppImage) ----------
     def _win_latest(self):
         import urllib.request
         req = urllib.request.Request(RELEASES + "?per_page=30", headers={"User-Agent": "nexus-assistant"})
         rels = json.loads(urllib.request.urlopen(req, timeout=20).read())
-        rels = [r for r in rels if r.get("tag_name", "").startswith("windows-v") and not r.get("draft")]
+        rels = [r for r in rels if r.get("tag_name", "").startswith(RELEASE_PREFIX) and not r.get("draft")]
         return rels[0] if rels else None
 
     def _win_update_check(self):
@@ -220,7 +220,7 @@ class Nexus:
             return tuple(int(x) if x.isdigit() else 0 for x in v.split("."))
         try:
             r = self._win_latest()
-            latest = r["tag_name"].removeprefix("windows-v") if r else __version__
+            latest = r["tag_name"].removeprefix(RELEASE_PREFIX) if r else __version__
             newer = ver(latest) > ver(__version__)
             news = [l.strip("-* ").strip() for l in (r.get("body") or "").splitlines() if l.strip().startswith(("-", "*"))][:6] if newer else []
             self.bus.emit("update_status", current=__version__, behind=1 if newer else 0,
@@ -236,7 +236,8 @@ class Nexus:
         self.bus.emit("update_status", current="", behind=0, news=[], error="", working=True)
         try:
             r = self._win_latest()
-            asset = next(a for a in r["assets"] if a["name"].lower().endswith(".exe"))
+            ext = ".exe" if IS_WIN else ".appimage"
+            asset = next(a for a in r["assets"] if a["name"].lower().endswith(ext))
             dest = CACHE / asset["name"]
             req = urllib.request.Request(asset["browser_download_url"], headers={"User-Agent": "nexus-assistant"})
             with urllib.request.urlopen(req, timeout=60) as src, open(dest, "wb") as f:
@@ -249,6 +250,18 @@ class Nexus:
             self.bus.emit("update_status", current="", behind=0, news=[], error="download: " + str(e)[:150])
             return
         self.bus.emit("update_status", current="", behind=0, news=[], error="", restarting=True)
+        if not IS_WIN:
+            # AppImage: sostituisce il file con quello nuovo e lo riapre
+            import shutil
+            target = APPIMAGE or str(dest)
+            os.chmod(dest, 0o755)
+            if APPIMAGE:
+                shutil.move(str(dest), APPIMAGE + ".new")
+                os.replace(APPIMAGE + ".new", APPIMAGE)
+            subprocess.Popen(["sh", "-c", f'sleep 2; exec "{target}"'], start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.5)
+            os._exit(0)
         subprocess.Popen(f'cmd /c timeout /t 2 /nobreak >nul & "{dest}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART',
                          creationflags=0x08000000, close_fds=True)
         time.sleep(0.5)
@@ -259,7 +272,7 @@ class Nexus:
         return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, timeout=timeout)
 
     def update_check(self):
-        if IS_WIN:
+        if IS_WIN or PACKAGED:
             return self._win_update_check()
         try:
             cur = self._git("log", "-1", "--format=%h · %cd", "--date=format:%d/%m/%Y %H:%M").stdout.strip()
@@ -273,7 +286,7 @@ class Nexus:
             self.bus.emit("update_status", current="", behind=0, news=[], error=str(e)[:160])
 
     def update_apply(self):
-        if IS_WIN:
+        if IS_WIN or PACKAGED:
             return self._win_update_apply()
         from .config import ROOT
         self.bus.emit("update_status", current="", behind=0, news=[], error="", working=True)

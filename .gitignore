@@ -12,3 +12,5 @@ android/local.properties
 android/wear/build/
 android/tsbridge/*.aar
 **/build/
+linux/dist/
+linux/build/

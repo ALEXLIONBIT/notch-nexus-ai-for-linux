@@ -9,6 +9,7 @@ su Windows si scrive direttamente in Unicode.
 """
 import subprocess
 import threading
+import os
 import time
 
 from . import tool
@@ -45,6 +46,11 @@ else:
     def _devices():
         global _mouse, _kbd
         with _lock:
+            if _mouse is None and not os.access("/dev/uinput", os.W_OK):
+                fix = (os.environ.get("APPIMAGE", "NEXUS.AppImage") + " --permessi") if os.environ.get("APPIMAGE") \
+                    else "./scripts/install.sh"
+                raise RuntimeError("non ho il permesso di usare mouse e tastiera virtuali (/dev/uinput). "
+                                   f"Una volta sola, da terminale: {fix}")
             if _mouse is None:
                 _mouse = UInput({
                     e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE],
