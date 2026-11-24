@@ -446,7 +446,7 @@ Rectangle {
                 Layout.preferredWidth: col.width; wrapMode: Text.Wrap
                 color: panel.s.update.error ? "#ff5a6e" : panel.s.inkSoft
                 font { family: panel.s.sansFamily; pixelSize: 12 }
-                text: panel.s.update.restarting ? "Aggiornato! Riavvio NEXUS…"
+                text: panel.s.update.restarting ? "Riavvio NEXUS…"
                     : panel.s.update.working ? "Scarico l'aggiornamento…"
                     : panel.s.update.error ? "Non riesco a controllare: " + panel.s.update.error
                     : (panel.s.update.current ? "Versione: " + panel.s.update.current : "Controllo…")
@@ -456,6 +456,8 @@ Rectangle {
             RowLayout {
                 spacing: 8
                 IconButton { text: "Controlla"; size: 34; tint: panel.s.ink; fill: panel.chip; onClicked: panel.s.send("update_check") }
+                IconButton { text: "Riavvia"; size: 34; tint: panel.s.ink; fill: panel.chip; tip: "Chiude e riapre tutto NEXUS"
+                    onClicked: panel.s.send("restart") }
                 IconButton { visible: panel.s.update.behind > 0; text: "Aggiorna ora"; size: 34; tint: "#0b1015"; fill: panel.s.led
                     onClicked: panel.s.send("update_apply") }
             }

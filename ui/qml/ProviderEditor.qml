@@ -89,26 +89,46 @@ Rectangle {
         Label2 { text: "Nome" }
         Field { id: nameF; placeholderText: "Es. PC fisso in salotto" }
         Label2 { text: "Indirizzo (URL)" }
-        Field { id: urlF; placeholderText: "http://100.64.0.2:11434" }
+        Field { id: urlF; placeholderText: "http://100.64.0.2:11434"; onEditingFinished: autoLoad.restart() }
         Label2 { text: pe.editing && pe.editing.api_key_hint ? "Chiave API (salvata: " + pe.editing.api_key_hint + ", lascia vuoto per tenerla)" : "Chiave API"  }
         Field { id: keyF; echoMode: TextInput.Password
-                placeholderText: pe.pr.needs_key ? "sk-…" : "Facoltativa (se il server la chiede)" }
+                placeholderText: pe.pr.needs_key ? "sk-…" : "Facoltativa (se il server la chiede)"
+                onTextChanged: autoLoad.restart() }
+        // appena ci sono indirizzo e chiave, carica da solo l'elenco dei modelli disponibili
+        Timer {
+            id: autoLoad; interval: 900
+            onTriggered: if (urlF.text.trim() && (keyF.text.trim().length > 8 || (pe.editing && pe.editing.api_key_hint) || !pe.pr.needs_key)) {
+                pe.s.providerMsg = "Carico i modelli disponibili…"
+                pe.s.send("provider_models", { id: pe.editing ? pe.editing.id : "", provider: pe.draft() })
+            }
+        }
 
         Label2 { text: "Modello" }
         RowLayout {
             Layout.fillWidth: true; spacing: 6
-            Field { id: modelF; placeholderText: "Es. qwen3.5:9b" }
+            Field { id: modelF; placeholderText: pe.s.providerModels.length ? "Scrivi per cercare o scegli qui sotto" : "Es. qwen3.5:9b" }
             IconButton { text: "Carica modelli"; size: 36; tint: pe.s.ink; fill: pe.field
                 onClicked: { pe.s.providerMsg = "Carico…"; pe.s.send("provider_models", { id: pe.editing ? pe.editing.id : "", provider: pe.draft() }) } }
         }
         // lista modelli trovati
-        Rectangle {
+        Text {
             visible: pe.s.providerModels.length > 0
-            Layout.fillWidth: true; Layout.preferredHeight: Math.min(150, pe.s.providerModels.length * 28 + 8)
+            text: pe.s.providerModels.length + " modelli disponibili con questa chiave" + (col.shown.length < pe.s.providerModels.length ? " · " + col.shown.length + " trovati" : "") + ": toccane uno"
+            color: pe.s.inkSoft; font { family: pe.s.sansFamily; pixelSize: 11 }
+        }
+        property var shown: {
+            var q = modelF.text.trim().toLowerCase()
+            var all = pe.s.providerModels
+            if (!q || all.indexOf(modelF.text.trim()) >= 0) return all
+            return all.filter(m => m.toLowerCase().indexOf(q) >= 0)
+        }
+        Rectangle {
+            visible: pe.s.providerModels.length > 0 && col.shown.length > 0
+            Layout.fillWidth: true; Layout.preferredHeight: Math.min(180, col.shown.length * 28 + 8)
             radius: 12; color: pe.field; clip: true
             ListView {
                 anchors.fill: parent; anchors.margins: 4
-                model: pe.s.providerModels
+                model: col.shown
                 boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: ScrollBar {}
                 delegate: Rectangle {

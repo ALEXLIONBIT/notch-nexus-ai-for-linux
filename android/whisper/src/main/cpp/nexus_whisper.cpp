@@ -59,7 +59,10 @@ Java_dev_nexus_whisper_WhisperNative_transcribe(JNIEnv * env, jobject, jfloatArr
     auto wp = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
     wp.n_threads = threads;
     wp.language = l.c_str();
-    wp.initial_prompt = p.empty() ? nullptr : p.c_str();
+    // niente suggerimento: su rumore e silenzio whisper scriverebbe proprio il testo suggerito ("Ehi Marco.")
+    (void) p;
+    wp.initial_prompt = nullptr;
+    wp.no_speech_thold = 0.6f;
     wp.translate = false;
     wp.no_context = true;
     wp.no_timestamps = true;
@@ -75,7 +78,10 @@ Java_dev_nexus_whisper_WhisperNative_transcribe(JNIEnv * env, jobject, jfloatArr
     std::string out;
     if (whisper_full(g_ctx, wp, data, n) == 0) {
         int ns = whisper_full_n_segments(g_ctx);
-        for (int i = 0; i < ns; i++) out += whisper_full_get_segment_text(g_ctx, i);
+        for (int i = 0; i < ns; i++) {
+            if (whisper_full_get_segment_no_speech_prob(g_ctx, i) >= 0.6f) continue;   // non è parlato
+            out += whisper_full_get_segment_text(g_ctx, i);
+        }
     }
     env->ReleaseFloatArrayElements(pcm, data, JNI_ABORT);
     return jnew(env, out);
