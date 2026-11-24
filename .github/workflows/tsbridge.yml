@@ -1,0 +1,61 @@
+name: Tailscale dentro NEXUS (libreria Android)
+
+# Compila android/tsbridge (tsnet) con gomobile e la pubblica come release "tsbridge-vN" (prerelease):
+# app del telefono e dell'orologio la scaricano da sole durante la build (vedi android/tsbridge.gradle.kts).
+on:
+  push:
+    branches: ["windows-wear", "main"]
+    paths: ["android/tsbridge/**", ".github/workflows/tsbridge.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  TS_VERSION: v1.104.7
+  TAG: tsbridge-v1
+
+jobs:
+  aar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Compila con gomobile
+        working-directory: android/tsbridge
+        run: |
+          go get tailscale.com@${TS_VERSION}
+          go mod tidy
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          go get golang.org/x/mobile/bind
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          gomobile init
+          gomobile bind -target=android/arm,android/arm64,android/amd64 -androidapi 28 \
+            -javapkg dev.nexus.ts -ldflags="-s -w" -trimpath -o tsbridge.aar .
+          ls -la tsbridge.aar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tsbridge
+          path: |
+            android/tsbridge/tsbridge.aar
+            android/tsbridge/go.sum
+      - name: Pubblica la libreria
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" android/tsbridge/tsbridge.aar --clobber
+          else
+            gh release create "$TAG" android/tsbridge/tsbridge.aar --prerelease --latest=false \
+              --title "Libreria Tailscale per NEXUS (uso interno)" \
+              --notes "Libreria usata per compilare le app Android e Wear OS (Tailscale dentro l'app). Non serve scaricarla."
+          fi
