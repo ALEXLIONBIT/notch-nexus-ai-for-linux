@@ -47,6 +47,14 @@ Canvas {
             c.moveTo(4.5, 4.5); c.lineTo(13.5, 13.5); c.moveTo(13.5, 4.5); c.lineTo(4.5, 13.5); c.stroke(); break
         case "send":
             c.moveTo(3, 9); c.lineTo(15, 9); c.moveTo(10, 4); c.lineTo(15, 9); c.lineTo(10, 14); c.stroke(); break
+        case "chat":
+            c.roundedRect(2.5, 3, 13, 9.5, 3, 3); c.stroke()
+            c.beginPath(); c.moveTo(6, 12.5); c.lineTo(5, 15.5); c.lineTo(9.5, 12.5); c.stroke(); break
+        case "plus":
+            c.moveTo(9, 3.5); c.lineTo(9, 14.5); c.moveTo(3.5, 9); c.lineTo(14.5, 9); c.stroke(); break
+        case "search":
+            c.arc(8, 8, 4.6, 0, 6.2832); c.stroke()
+            c.beginPath(); c.moveTo(11.4, 11.4); c.lineTo(15, 15); c.stroke(); break
         case "check":
             c.moveTo(3.5, 9.5); c.lineTo(7.5, 13.5); c.lineTo(14.5, 5); c.stroke(); break
         }

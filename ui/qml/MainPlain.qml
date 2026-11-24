@@ -28,6 +28,9 @@ QtObject {
     }
 
     // primo avvio (Windows e AppImage): scegli dove gira il cervello
+    // chat salvate: si apre dal pulsante nel notch
+    property Window chatWin: ChatWindow { store: root.store }
+
     property Window setupWin: Window {
         id: setupWin
         color: "transparent"

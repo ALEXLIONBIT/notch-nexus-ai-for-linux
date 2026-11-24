@@ -42,6 +42,7 @@ class Nexus:
         self.pending = {}
         self.stopped = False
         self.ears = self.voice = self.stt = self.brain = None
+        self.chat = None                       # chat in corso (vedi chats.py)
 
     # ---------- avvio ----------
     def start(self):
@@ -89,6 +90,7 @@ class Nexus:
         self.bus.emit("presets", presets=PRESETS)
         self.bus.emit("config", config=self.cfg.public())
         self.bus.emit("state", state=self.state, detail=getattr(self, "detail", ""))
+        self._emit_chat()
 
     # ---------- comandi dalla UI ----------
     def on_command(self, msg):
@@ -126,6 +128,8 @@ class Nexus:
             threading.Thread(target=tailnet.connect, args=(lambda d: self.bus.emit("tailscale", **d),), daemon=True).start()
         elif t == "setup_choice":
             threading.Thread(target=self.setup_choice, args=(msg.get("choice"),), daemon=True).start()
+        elif t in ("chats_list", "chat_open", "chat_new", "chat_delete", "chat_rename"):
+            self.chat_command(t, msg)
         elif t in ("models_installed", "models_search", "model_pull", "model_delete", "model_use"):
             threading.Thread(target=self.models_command, args=(t, msg), daemon=True).start()
         elif t in ("provider_save", "provider_delete", "provider_models", "provider_test"):
@@ -319,6 +323,62 @@ class Nexus:
             pass
 
     # ---------- provider ----------
+    # ---------- chat salvate ----------
+    def _current_chat(self):
+        """La chat in corso; dopo una pausa più lunga della memoria del cervello ne comincia una nuova."""
+        from . import chats
+        if self.chat is None or time.time() - self.chat["updated"] > self.cfg["memory_minutes"] * 60:
+            self.chat = chats.new()
+            if self.brain:
+                self.brain.history = []
+        return self.chat
+
+    def _chat_add(self, role, text):
+        from . import chats
+        c = self._current_chat()
+        chats.add(c, role, text)
+        if role == "assistant" and self.brain:
+            c["history"] = self.brain.history
+            chats.save(c)
+        self.bus.emit("chat_message", id=c["id"], title=c["title"], role=role, text=text)
+
+    def _emit_chat(self):
+        c = self.chat or {"id": "", "title": "", "messages": []}
+        self.bus.emit("chat", id=c["id"], title=c.get("title", ""), messages=c["messages"])
+
+    def chat_command(self, t, msg):
+        from . import chats
+        cid = msg.get("id", "")
+        if t == "chat_open":
+            c = chats.load(cid)
+            if c:
+                c["updated"] = time.time()          # riaperta: il discorso continua da qui
+                self.chat = c
+                if self.brain:
+                    self.brain.history = list(c.get("history") or [])
+                    self.brain.last = time.time()
+            self._emit_chat()
+            return
+        if t == "chat_new":
+            self.chat = None
+            if self.brain:
+                self.brain.history = []
+            self._emit_chat()
+        elif t == "chat_delete":
+            chats.delete(cid)
+            if self.chat and self.chat["id"] == cid:
+                self.chat = None
+                if self.brain:
+                    self.brain.history = []
+                self._emit_chat()
+        elif t == "chat_rename":
+            chats.rename(cid, msg.get("title", ""))
+            if self.chat and self.chat["id"] == cid:
+                self.chat = chats.load(cid)
+                self._emit_chat()
+        self.bus.emit("chats", list=chats.listing(msg.get("query", "")), query=msg.get("query", ""),
+                      current=self.chat["id"] if self.chat else "")
+
     # ---------- modelli di Ollama (Personalizza → Modelli) ----------
     def models_command(self, t, msg):
         from . import models
@@ -447,14 +507,17 @@ class Nexus:
                     if not text or self.stopped:
                         break
                 self.bus.emit("transcript", text=text)
+                self._chat_add("user", text)
                 quick = self.quick_command(text)
                 if quick:                              # comandi istantanei, senza passare dal cervello
+                    self._chat_add("assistant", quick)
                     self.bus.emit("reply", text=quick); self.set_state("speaking", ""); self.voice.speak(quick)
                     break
                 self.set_state("thinking", "Penso…")
                 t0 = time.time()
                 reply = self.brain.run(text)
                 self.log_chat(text, reply, time.time() - t0)
+                self._chat_add("assistant", reply)
                 if self.stopped:
                     break
                 self.bus.emit("reply", text=reply)

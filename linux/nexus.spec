@@ -18,7 +18,7 @@ datas += collect_data_files("piper")
 datas += collect_data_files("faster_whisper")
 datas += collect_data_files("onnxruntime")
 
-hidden = ["nexus.tools." + t for t in TOOLS] + ["nexus.models", "nexus.winsetup", "nexus.gateway", "nexus.tailnet", "selftest", "app"]
+hidden = ["nexus.tools." + t for t in TOOLS] + ["nexus.models", "nexus.chats", "nexus.winsetup", "nexus.gateway", "nexus.tailnet", "selftest", "app"]
 hidden += collect_submodules("openwakeword") + collect_submodules("piper") + collect_submodules("evdev")
 hidden += ["sounddevice", "_sounddevice_data", "certifi"]
 

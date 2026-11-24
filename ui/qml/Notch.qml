@@ -133,6 +133,7 @@ Item {
                     onClicked: notch.s.send("stop") }
                 IconButton { glyph: "mic"; tip: "Parla"; tint: "#e8edf2"; visible: !notch.busy; onClicked: notch.s.send("listen") }
                 IconButton { glyph: notch.pinned ? "pinned" : "pin"; tip: notch.pinned ? "Lascia chiudere" : "Tieni aperto"; tint: "#e8edf2"; onClicked: notch.pinned = !notch.pinned }
+                IconButton { glyph: "chat"; tip: "Chat"; tint: "#e8edf2"; onClicked: notch.s.chatOpen = true }
                 IconButton { glyph: "expand"; tip: "Schermo intero"; tint: "#e8edf2"; onClicked: notch.s.fullscreen = true }
             }
         }

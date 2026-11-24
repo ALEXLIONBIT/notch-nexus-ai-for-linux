@@ -21,6 +21,13 @@ Item {
     // Personalizza → Modelli (Ollama del cervello attivo)
     property var models: ({ target: "", url: "", current: "", installed: [], error: "" })
     property var modelResults: []
+    // chat salvate
+    property bool chatOpen: false
+    property string chatId: ""
+    property string chatTitle: ""
+    property var chatMessages: []
+    property var chatList: []
+    property string chatQuery: ""
     property real vramGb: 0
     property bool modelSearching: false
     property var modelProgress: ({ name: "", text: "", pct: -1, done: true, error: "" })
@@ -216,6 +223,14 @@ Item {
             case "browsers": store.browsers = d.list; break
             case "presets": store.presets = d.presets; break
             case "update_status": store.update = d; break
+            case "chat": store.chatId = d.id; store.chatTitle = d.title; store.chatMessages = d.messages; break
+            case "chat_message":
+                if (d.id !== store.chatId) { store.chatId = d.id; store.chatMessages = [] }
+                store.chatTitle = d.title
+                store.chatMessages = store.chatMessages.concat([{ role: d.role, text: d.text, time: Date.now() / 1000 }])
+                if (store.chatOpen) store.send("chats_list", { query: store.chatQuery })
+                break
+            case "chats": store.chatList = d.list; break
             case "models": store.models = d; break
             case "models_search": store.modelResults = d.results; store.vramGb = d.vram_gb; store.modelSearching = false; break
             case "model_progress": store.modelProgress = d; break

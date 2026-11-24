@@ -23,6 +23,9 @@ QtObject {
         Component.onCompleted: visible = true
     }
 
+    // chat salvate: si apre dal pulsante nel notch
+    property Window chatWin: ChatWindow { store: root.store }
+
     property Window faceWin: Window {
         id: faceWin
         color: "transparent"
