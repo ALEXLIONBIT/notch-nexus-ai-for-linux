@@ -25,6 +25,13 @@ if(ANDROID_ABI STREQUAL "arm64-v8a")
     set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
     set(GGML_CPU_KLEIDIAI ON CACHE BOOL "" FORCE)
 endif()
+if(ANDROID_ABI STREQUAL "armeabi-v7a")
+    # orologi (es. Galaxy Watch) con Android a 32 bit: un solo backend CPU, con NEON
+    set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
+    set(GGML_CPU_KLEIDIAI OFF CACHE BOOL "" FORCE)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfpu=neon-vfpv4 -mfloat-abi=softfp" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfpu=neon-vfpv4 -mfloat-abi=softfp" CACHE STRING "" FORCE)
+endif()
 FetchContent_MakeAvailable(llama)
 
 add_library(nexusllama SHARED nexus_llama.cpp)

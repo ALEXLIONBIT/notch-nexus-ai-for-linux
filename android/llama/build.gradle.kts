@@ -18,7 +18,7 @@ android {
         minSdk = 28
         consumerProguardFiles("consumer-rules.pro")
         ndk {
-            abiFilters += if (System.getenv("NEXUS_ABI_ALL") != null) listOf("arm64-v8a", "x86_64") else listOf("arm64-v8a")
+            abiFilters += if (System.getenv("NEXUS_ABI_ALL") != null) listOf("arm64-v8a", "armeabi-v7a", "x86_64") else listOf("arm64-v8a", "armeabi-v7a")
         }
         externalNativeBuild {
             cmake {

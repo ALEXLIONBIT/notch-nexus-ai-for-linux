@@ -22,7 +22,8 @@ object LlamaNative {
         synchronized(this) {
             if (ready) return
             try { System.loadLibrary("nexusllama") } catch (e: UnsatisfiedLinkError) {
-                error("questo dispositivo non può eseguire modelli AI (serve un processore a 64 bit)")
+                val abi = android.os.Build.SUPPORTED_ABIS.joinToString(",")
+                error("libreria dei modelli non caricata (abi $abi, ${if (android.os.Process.is64Bit()) "64" else "32"} bit): ${e.message?.take(80)}")
             }
             init(ctx.applicationInfo.nativeLibraryDir)
             ready = true
