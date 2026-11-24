@@ -18,9 +18,7 @@ for p in (BASE / "backend", BASE / "ui", BASE / "windows", BASE):
 os.environ.setdefault("NEXUS_UI_DIR", str(BASE / "ui"))
 os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
 
-UDEV = ('echo \'KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"\' '
-        '> /etc/udev/rules.d/60-nexus-uinput.rules; echo uinput > /etc/modules-load.d/nexus-uinput.conf; '
-        'modprobe uinput; udevadm control --reload-rules; udevadm trigger /dev/uinput; usermod -aG input "$1"')
+# la regola udev e la richiesta della password stanno in backend/nexus/perms.py
 
 
 CERTS = ("/etc/ssl/certs/ca-certificates.crt",            # Debian/Ubuntu/Mint, Arch
@@ -152,15 +150,11 @@ Categories=Utility;
 
 
 def _permessi():
-    if os.access("/dev/uinput", os.W_OK):
-        print("Mouse e tastiera virtuali: permesso già presente.")
-        return 0
-    user = os.environ.get("USER") or os.getlogin()
+    from nexus import perms
     print("Chiedo la password di amministratore per dare a NEXUS mouse e tastiera virtuali…")
-    r = subprocess.run(["pkexec", "sh", "-c", UDEV, "sh", user])
-    if r.returncode == 0:
-        print("Fatto. Esci e rientra (o riavvia) perché valga il gruppo 'input'.")
-    return r.returncode
+    ok, text = perms.grant_uinput()
+    print(text)
+    return 0 if ok else 1
 
 
 def main():

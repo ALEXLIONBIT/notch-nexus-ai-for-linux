@@ -120,6 +120,15 @@ class Nexus:
             self.apply_config(msg.get("config", {}))
         elif t == "update_check":
             threading.Thread(target=self.update_check, daemon=True).start()
+        elif t == "perms_status":
+            from . import perms
+            self.bus.emit("perms", **perms.status(self.ears), text="")
+        elif t == "perms_grant":
+            def grant():
+                from . import perms
+                ok, text = perms.grant_uinput()
+                self.bus.emit("perms", **perms.status(self.ears), text=text, ok=ok)
+            threading.Thread(target=grant, daemon=True).start()
         elif t == "restart":
             threading.Thread(target=self.restart, daemon=True).start()
         elif t == "update_apply":

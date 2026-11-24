@@ -1,3 +1,5 @@
+**Novità 0.4.2** — Il primo avvio comincia dai **permessi**: mouse e tastiera (un clic su *Concedi* e la password, funziona subito senza uscire dalla sessione), microfono e lettura dello schermo, ognuno con il suo stato.
+
 **Novità 0.4.1** — *Ehi <nome>* non si attiva più da solo con rumori, silenzio o discorsi normali; aggiungendo un cervello con chiave API l'elenco dei modelli disponibili compare da solo (scrivi per cercare) e *Prova* ti suggerisce il nome giusto; in Aggiornamenti c'è il pulsante **Riavvia**.
 
 **Novità 0.4.0** — **Dagli il nome che vuoi**: Personalizza → Ascolto → *Come si chiama* (es. Marco) e scegli *Ehi Marco* come parola per svegliarlo. Puoi anche dire tutto di fila: “Marco, che tempo fa domani?”. Si presenta col suo nome. La prima volta scarica un piccolo modello (75 MB).
@@ -17,7 +19,7 @@ Al primo avvio NEXUS si aggiunge al menu delle app e all'avvio automatico, e ti 
 - **Su questo PC**: installa Ollama (ti chiede la password) e scarica il cervello giusto per la tua scheda video
 - **Con un provider**: il tuo PC di casa via Tailscale, OpenAI, Claude, Gemini, Groq…
 
-**Mouse e tastiera virtuali** (per cliccare e scrivere al posto tuo), una volta sola:
+**Mouse e tastiera virtuali**: li concedi al primo avvio; in alternativa, da terminale:
 ```
 ./NEXUS-*-x86_64.AppImage --permessi
 ```

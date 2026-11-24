@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// Primo avvio su Windows: dove deve girare il cervello di NEXUS?
+// Primo avvio (Windows e AppImage): su Linux prima i permessi, poi dove deve girare il cervello di NEXUS.
 Rectangle {
     id: setup
     property Store s
@@ -11,6 +11,8 @@ Rectangle {
     border.color: Qt.rgba(1, 1, 1, 0.08)
     implicitWidth: 560
     implicitHeight: col.implicitHeight + 64
+    readonly property bool permsStep: s.platform === "linux" && !s.permsSeen
+    Component.onCompleted: if (permsStep) s.send("perms_status")
 
     ColumnLayout {
         id: col
@@ -23,7 +25,72 @@ Rectangle {
             color: setup.s.ink
             font.family: setup.s.sansFamily; font.pixelSize: 28; font.weight: Font.ExtraBold
         }
+        // ---------------------------------------------------------------- passo 1: permessi (Linux)
         Text {
+            visible: setup.permsStep
+            Layout.fillWidth: true; wrapMode: Text.WordWrap
+            text: "Prima i permessi, così posso aiutarti davvero. Puoi sistemarli anche dopo."
+            color: setup.s.inkSoft; font.family: setup.s.sansFamily; font.pixelSize: 15
+        }
+        Repeater {
+            model: setup.permsStep ? [
+                { ok: setup.s.perms.uinput, title: "Mouse e tastiera",
+                  body: setup.s.perms.uinput ? "Posso cliccare e scrivere al posto tuo." : "Per cliccare e scrivere al posto tuo serve un permesso (ti chiedo la password una volta).",
+                  action: setup.s.perms.uinput ? "" : "Concedi" },
+                { ok: setup.s.perms.mic, title: "Microfono",
+                  body: setup.s.perms.mic ? "Ti sento." : "Non trovo un microfono: collegalo (lo cerco da solo ogni 10 secondi). Intanto puoi scrivermi.",
+                  action: "" },
+                { ok: setup.s.perms.ocr, title: "Leggere lo schermo",
+                  body: setup.s.perms.ocr ? "Posso leggere quello che c'è sullo schermo." : "Per leggere lo schermo installa tesseract: sudo pacman -S tesseract tesseract-data-ita (Arch) oppure sudo apt install tesseract-ocr tesseract-ocr-ita (Ubuntu, Mint).",
+                  action: "" }
+            ] : []
+            delegate: Rectangle {
+                id: prow
+                required property var modelData
+                Layout.fillWidth: true
+                implicitHeight: prowBox.implicitHeight + 24
+                radius: 18; color: Qt.rgba(1, 1, 1, 0.05); border.width: 1; border.color: Qt.rgba(1, 1, 1, 0.08)
+                RowLayout {
+                    id: prowBox
+                    anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                    anchors.margins: 14; spacing: 12
+                    Rectangle {
+                        width: 26; height: 26; radius: 13
+                        color: prow.modelData.ok ? "#3fb27f" : "#e0a03a"
+                        Text { anchors.centerIn: parent; text: prow.modelData.ok ? "✓" : "!"; color: "white"; font.pixelSize: 15; font.weight: Font.Bold }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 2
+                        Text { text: prow.modelData.title; color: setup.s.ink; font.family: setup.s.sansFamily; font.pixelSize: 16; font.weight: Font.Bold }
+                        Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: prow.modelData.body; color: setup.s.inkSoft
+                               font.family: setup.s.sansFamily; font.pixelSize: 13 }
+                    }
+                    IconButton {
+                        visible: prow.modelData.action !== ""
+                        text: prow.modelData.action; size: 34; tint: "#0b1015"; fill: setup.s.led
+                        onClicked: { setup.s.perms = Object.assign({}, setup.s.perms, { text: "Ti chiedo la password…", ok: true }); setup.s.send("perms_grant") }
+                    }
+                }
+            }
+        }
+        Text {
+            visible: setup.permsStep && setup.s.perms.text !== ""
+            Layout.fillWidth: true; wrapMode: Text.WordWrap
+            text: setup.s.perms.text
+            color: setup.s.perms.ok === false ? "#ff5a6e" : setup.s.ink
+            font.family: setup.s.sansFamily; font.pixelSize: 13
+        }
+        RowLayout {
+            visible: setup.permsStep
+            Layout.fillWidth: true
+            IconButton { text: "Ricontrolla"; size: 38; tint: setup.s.ink; fill: Qt.rgba(1, 1, 1, 0.08); onClicked: setup.s.send("perms_status") }
+            Item { Layout.fillWidth: true }
+            IconButton { text: "Avanti"; size: 38; tint: "#0b1015"; fill: setup.s.led; onClicked: setup.s.permsSeen = true }
+        }
+
+        // ---------------------------------------------------------------- passo 2: cervello
+        Text {
+            visible: !setup.permsStep
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
             text: "Dove deve ragionare il tuo robot? Puoi cambiarlo quando vuoi da Personalizza → Cervello."
@@ -41,6 +108,7 @@ Rectangle {
             delegate: AbstractButton {
                 id: opt
                 required property var modelData
+                visible: !setup.permsStep
                 Layout.fillWidth: true
                 implicitHeight: box.implicitHeight + 32
                 enabled: !setup.s.setup.working
@@ -78,7 +146,7 @@ Rectangle {
         // avanzamento dell'installazione
         ColumnLayout {
             Layout.fillWidth: true
-            visible: setup.s.setup.working || setup.s.setup.error !== ""
+            visible: !setup.permsStep && (setup.s.setup.working || setup.s.setup.error !== "")
             spacing: 8
             Text {
                 Layout.fillWidth: true; wrapMode: Text.WordWrap
