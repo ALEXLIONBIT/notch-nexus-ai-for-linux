@@ -86,12 +86,26 @@ object Core {
     fun answerConfirm(ok: Boolean) { confirmWait?.complete(ok) }
 
     // ------------------------------------------------------------ ascolto
-    /** Dal thread principale. Usa il riconoscimento interno se c'è, altrimenti la dettatura di sistema. */
-    fun listen() {
+    /** Servizi di riconoscimento veri dell'orologio (Google/Samsung), escluso quello vuoto di NEXUS:
+     *  quando NEXUS è l'assistente predefinito, Android userebbe proprio quello e darebbe sempre errore. */
+    private fun recognizers(): List<android.content.ComponentName> {
+        val pm = app.packageManager
+        val list = pm.queryIntentServices(Intent(android.speech.RecognitionService.SERVICE_INTERFACE), 0)
+            .map { android.content.ComponentName(it.serviceInfo.packageName, it.serviceInfo.name) }
+            .filter { it.packageName != app.packageName }
+        val pref = listOf("com.google.android.tts", "com.google.android.googlequicksearchbox", "com.google.android.as",
+            "com.google.android.wearable.assistant", "com.samsung")
+        return list.sortedBy { c -> pref.indexOfFirst { c.packageName.startsWith(it) }.let { if (it < 0) 99 else it } }
+    }
+
+    /** Dal thread principale. Usa il riconoscimento vocale dell'orologio; la dettatura di sistema solo se nessuno funziona. */
+    fun listen(attempt: Int = 0) {
         stopSpeaking()
-        if (!SpeechRecognizer.isRecognitionAvailable(app)) { state = "listening"; detail = "Ti ascolto"; systemDictation?.invoke(); return }
+        val comps = recognizers()
+        if (attempt >= comps.size) { state = "listening"; detail = "Ti ascolto"; systemDictation?.invoke(); return }
         recognizer?.destroy()
-        recognizer = SpeechRecognizer.createSpeechRecognizer(app)
+        recognizer = SpeechRecognizer.createSpeechRecognizer(app, comps[attempt])
+        state = "listening"; detail = "Ti ascolto"
         var heard = false
         recognizer?.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(p: Bundle?) { state = "listening"; detail = "Ti ascolto"; transcript = "" }
@@ -103,7 +117,7 @@ object Core {
                 level = 0f
                 if (err == SpeechRecognizer.ERROR_CLIENT || err == SpeechRecognizer.ERROR_SERVER_DISCONNECTED ||
                     err == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE || err == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED) {
-                    systemDictation?.invoke(); return              // il servizio interno non va: dettatura di sistema
+                    if (!heard) { listen(attempt + 1); return }     // questo servizio non va: prova il prossimo
                 }
                 if (state == "listening" || state == "thinking") {
                     state = "idle"

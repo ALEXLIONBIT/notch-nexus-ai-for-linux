@@ -12,8 +12,8 @@ android {
         applicationId = "dev.nexus.assistant"
         minSdk = 30            // Wear OS 3 e successivi (Galaxy Watch 4+, Pixel Watch, …)
         targetSdk = 34
-        versionCode = 100003
-        versionName = "0.1.2"
+        versionCode = 100004
+        versionName = "0.1.3"
     }
     // firma delle release: ~/.android/nexus-release.keystore (fuori dal repo). Stessa chiave per telefono e orologio,
     // altrimenti gli aggiornamenti non si installano e l'orologio non riceve le impostazioni dal telefono.
