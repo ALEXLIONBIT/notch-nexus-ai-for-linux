@@ -20,7 +20,8 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          # 3.11 come scripts/install.sh: openwakeword recente vuole tflite-runtime, che per il 3.12 non c'è
+          python-version: "3.11"
           cache: pip
           cache-dependency-path: backend/requirements.txt
 
