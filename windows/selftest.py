@@ -341,6 +341,8 @@ def ui_main():
         from PySide6.QtGui import QGuiApplication
         from PySide6.QtQml import QQmlApplicationEngine
         qapp = QGuiApplication(sys.argv[:1])
+        qapp.setOrganizationName("nexus")
+        qapp.setApplicationName("nexus-ui")
         import app as ui
         warnings = []
         eng = QQmlApplicationEngine()
@@ -348,7 +350,7 @@ def ui_main():
         eng.rootContext().setContextProperty("nexus", ui.Bridge())
         eng.addImportPath(str(ui.HERE / "qml"))
         eng.load(QUrl.fromLocalFile(str(ui.HERE / "qml" / "MainPlain.qml")))
-        QTimer.singleShot(1500, qapp.quit)
+        QTimer.singleShot(1500, lambda: qapp.exit(0))
         qapp.exec()
         bad = [w for w in warnings if "Error" in w or "is not installed" in w or "not found" in w.lower()]
         if not eng.rootObjects():

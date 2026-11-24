@@ -62,6 +62,7 @@ jobs:
             windows/dist/NEXUS-Setup-*.exe
             windows/dist/*.json
             windows/dist/*.png
+            windows/dist/*.txt
           if-no-files-found: warn
 
       - name: Pubblica la release

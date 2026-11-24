@@ -56,7 +56,8 @@ class Bridge(QObject):
     @Slot()
     def quit(self):
         """Unico modo per chiudere NEXUS: Personalizza → Esci (Alt+F4 viene ignorato)."""
-        QGuiApplication.instance().quit()
+        # exit() e non quit(): su Qt 6 quit() chiede alle finestre di chiudersi e le nostre rifiutano (per Alt+F4)
+        QGuiApplication.instance().exit(0)
 
     @Slot(str, "QVariantMap")
     def send(self, type_, data):
