@@ -95,6 +95,16 @@ Installazione: scarica `nexus-wear-*.apk` dalle Release e installalo sull'orolog
 (`adb pair` / `adb connect` dal debug wireless dell'orologio, poi `adb install nexus-wear-*.apk`).
 L'app del telefono e quella dell'orologio devono essere firmate con la stessa chiave.
 
+## Chat e modelli
+
+- **Chat salvate** (desktop, telefono, orologio): ogni conversazione resta salvata. Dal pulsante 💬 del notch (o dalla scheda
+  Chat del telefono, o da "Chat salvate" sull'orologio) le rivedi, le cerchi, le riapri e continui da dove eri rimasto.
+- **Modelli** sul PC: Personalizza → Modelli cerca nel catalogo di Ollama, scarica e cambia cervello con un clic
+  (o a voce: "installa gemma3 da 4b e usalo").
+- **Modelli sul telefono e sull'orologio**: Cervello → Modelli sul telefono / sull'orologio. Girano sul dispositivo con
+  llama.cpp, anche senza internet: consigliati da Gemma 3 270M e Qwen 2.5 0.5B (orologio) fino a Qwen 3 4B (telefono),
+  oppure qualsiasi GGUF cercato su Hugging Face.
+
 ## Provider: dove gira il cervello
 
 Non serve per forza un PC potente. Da **Personalizza → Cervello** aggiungi uno o più provider e scegli quale usare:

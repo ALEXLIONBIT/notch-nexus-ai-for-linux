@@ -1,4 +1,6 @@
-**Novità 0.2.1**: ricerche web e aggiornamenti funzionano su tutte le distro (prima su Arch/CachyOS e Fedora HTTPS non trovava i certificati).
+**Novità 0.3.0**
+- **Chat**: pulsante 💬 nel notch → finestra con tutte le conversazioni salvate: cerca, riapri (NEXUS ricorda il discorso), nuova chat, elimina; scrivi o parla da lì
+- **Modelli**: Personalizza → Modelli → cerca nel catalogo di Ollama, scarica con la barra di avanzamento, usa o elimina. Le taglie in azzurro entrano nella scheda video. Anche a voce: "installa qwen3 da 4b e usalo"
 
 **NEXUS per Linux in un solo file (AppImage)**: lo stesso robot dell'installazione classica, senza script né Python da installare.
 
