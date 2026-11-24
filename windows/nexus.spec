@@ -18,7 +18,7 @@ datas += collect_data_files("piper")                 # espeak-ng per la pronunci
 datas += collect_data_files("faster_whisper")        # Silero VAD
 datas += collect_data_files("onnxruntime")
 
-hidden = ["nexus.tools." + t for t in TOOLS] + ["nexus.models", "nexus.chats", "nexus.winsetup", "nexus.gateway", "selftest", "app"]
+hidden = ["nexus.tools." + t for t in TOOLS] + ["nexus.models", "nexus.chats", "nexus.wakename", "nexus.winsetup", "nexus.gateway", "selftest", "app"]
 hidden += collect_submodules("winrt") + collect_submodules("openwakeword") + collect_submodules("piper")
 hidden += ["pycaw.pycaw", "comtypes.stream", "win32timezone", "send2trash", "zeroconf._utils.ipaddress",
            "zeroconf._handlers.answers", "sounddevice", "_sounddevice_data"]

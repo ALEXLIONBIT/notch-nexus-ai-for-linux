@@ -43,7 +43,8 @@ DEFAULTS = {
     "stt_provider": "",
     "stt_remote_model": "whisper-1",
     # orecchie
-    "wake_word": "hey_jarvis",          # hey_jarvis | alexa | hey_mycroft | hey_rhasspy
+    "wake_word": "hey_jarvis",          # hey_jarvis | alexa | hey_mycroft | name (= chiamalo col suo nome)
+    "agent_name": "Nexus",               # come si chiama l'agente (e, con wake_word "name", come lo svegli)
     "wake_threshold": 0.5,
     "wake_enabled": True,
     "stt_model": "large-v3-turbo",
@@ -97,7 +98,7 @@ class Config(dict):
             CONFIG_FILE.write_text(json.dumps(dict(self), indent=2, ensure_ascii=False), encoding="utf-8")
 
     def public(self):
-        keys = ["model", "wake_word", "wake_threshold", "wake_enabled", "voice", "voice_speed",
+        keys = ["model", "wake_word", "agent_name", "wake_threshold", "wake_enabled", "voice", "voice_speed",
                 "robot_strength", "language", "screen_scale", "browser", "auto_mode", "provider", "stt_mode", "stt_provider",
                 "stt_remote_model", "stt_model"] + (["setup_done"] if IS_WIN or getattr(sys, "frozen", False) else [])
         from .providers import public as pub

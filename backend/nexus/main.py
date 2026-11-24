@@ -71,10 +71,11 @@ class Nexus:
             threading.Event().wait()          # nell'app Windows il backend gira in un thread e la UI tiene vivo il processo
 
     def _idle_text(self):
-        w = self.cfg["wake_word"].replace("_", " ").title()
+        w = ("Ehi " + (self.cfg.get("agent_name") or "Nexus")) if self.cfg["wake_word"] == "name" \
+            else self.cfg["wake_word"].replace("_", " ").title()
         if self.ears and self.ears.stream is None:
             return "Nessun microfono: scrivimi"
-        return f"Di' “{w}”" if self.ears and self.ears.oww else "Clicca 🎤 per parlare"
+        return f"Di' “{w}”" if self.ears and (self.ears.oww or self.ears.spotter) else "Clicca 🎤 per parlare"
 
     def set_state(self, state, detail=""):
         self.state, self.detail = state, detail
@@ -165,6 +166,8 @@ class Nexus:
             self.voice.load()
         if self.ears and old["wake_word"] != self.cfg["wake_word"]:
             self.ears.load_wakeword()
+        if self.brain and old.get("agent_name") != self.cfg.get("agent_name"):
+            self.brain.history = []            # nuovo nome: la memoria breve riparte
         self.bus.emit("config", config=self.cfg.public())
         if self.state == "idle":
             self.set_state("idle", self._idle_text())
@@ -470,8 +473,27 @@ class Nexus:
                 self.bus.emit("provider_result", ok=False, text=f"Connessione fallita: {str(e)[:160]}")
 
     # ---------- sessione di conversazione ----------
-    def on_wake(self):
-        self._spawn(None)
+    def on_wake(self, text=None, audio=None):
+        if not text or len(text.strip()) <= 2:
+            return self._spawn(None)
+        if audio is None or self.stt is None:
+            return self._spawn(text.strip())
+
+        def precise():
+            # Whisper tiny riconosce il nome ma sbaglia il resto: la domanda la ritrascrive quello principale
+            from .wakename import match
+            q = text.strip()
+            try:
+                full = self.stt.transcribe(audio)
+                ok, rest = match(full, self.cfg.get("agent_name") or "Nexus")
+                if ok and len(rest) > 2:
+                    q = rest
+                elif len(full.split()) > len(q.split()):
+                    q = full
+            except Exception as e:
+                print("trascrizione della domanda:", e)
+            self._spawn(q)
+        threading.Thread(target=precise, daemon=True).start()
 
     def _spawn(self, text):
         if self.brain is None or self.busy.locked():

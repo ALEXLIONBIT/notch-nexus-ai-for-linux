@@ -262,16 +262,36 @@ Rectangle {
             }
             Text {
                 Layout.preferredWidth: col.width; wrapMode: Text.Wrap
-                text: "Puoi anche dire “Hey Jarvis, mettiti in automode” o “torna in manuale”. In Auto i comandi distruttivi (formattare dischi, cancellare il sistema) restano comunque bloccati."
+                text: "Puoi anche dire “mettiti in automode” o “torna in manuale”. In Auto i comandi distruttivi (formattare dischi, cancellare il sistema) restano comunque bloccati."
                 color: panel.s.inkSoft; font { family: panel.s.sansFamily; pixelSize: 11 }
             }
 
             // ---------- ascolto ----------
             Section { text: "Ascolto" }
+            Heading { text: "Come si chiama" }
+            TextField {
+                id: agentName
+                Layout.preferredWidth: col.width
+                text: panel.cfg.agent_name || "Nexus"
+                placeholderText: "Il nome del tuo assistente (es. Marco, Jarvis, Robo)"
+                color: panel.s.ink; placeholderTextColor: panel.s.inkSoft
+                font { family: panel.s.sansFamily; pixelSize: 13 }
+                leftPadding: 14; maximumLength: 30
+                background: Rectangle { implicitHeight: 38; radius: 19; color: panel.chip }
+                onEditingFinished: if (text.trim() && text.trim() !== panel.cfg.agent_name) panel.sendCfg("agent_name", text.trim())
+            }
             Heading { text: "Parola per svegliarlo" }
             Chips {
-                options: ["hey_jarvis", "alexa", "hey_mycroft"]; labels: ["Hey Jarvis", "Alexa", "Hey Mycroft"]
+                options: ["name", "hey_jarvis", "alexa", "hey_mycroft"]
+                labels: ["Ehi " + (panel.cfg.agent_name || "Nexus"), "Hey Jarvis", "Alexa", "Hey Mycroft"]
                 current: panel.cfg.wake_word || ""; onPicked: v => panel.sendCfg("wake_word", v)
+            }
+            Text {
+                visible: panel.cfg.wake_word === "name"
+                Layout.preferredWidth: col.width; wrapMode: Text.Wrap
+                text: "Chiamalo per nome: “Ehi " + (panel.cfg.agent_name || "Nexus") + "” oppure tutto di fila, “"
+                      + (panel.cfg.agent_name || "Nexus") + ", che tempo fa domani?”. La prima volta scarica un piccolo modello (75 MB)."
+                color: panel.s.inkSoft; font { family: panel.s.sansFamily; pixelSize: 11 }
             }
             Chips {
                 options: ["on", "off"]; labels: ["Ascolto sempre attivo", "Solo col pulsante"]
