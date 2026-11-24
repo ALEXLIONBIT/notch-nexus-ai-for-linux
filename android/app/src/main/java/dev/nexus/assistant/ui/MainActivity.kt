@@ -70,6 +70,11 @@ import dev.nexus.assistant.core.Prefs
 import dev.nexus.assistant.core.Provider
 
 class MainActivity : ComponentActivity() {
+    override fun onResume() {
+        super.onResume()
+        dev.nexus.assistant.core.WakeService.start(this)      // ascolto del nome (se acceso): si avvia con l'app davanti
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

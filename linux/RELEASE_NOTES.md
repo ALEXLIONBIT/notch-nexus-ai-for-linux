@@ -1,4 +1,4 @@
-**Novità 0.3.2** — su KDE Plasma (Wayland) il notch torna come deve essere: in alto al centro, sopra le finestre, senza voce nella barra delle applicazioni. L'AppImage usa il layer-shell di KDE già presente nel sistema (servono i pacchetti `pyside6` e `layer-shell-qt`, già installati su Plasma; su Ubuntu: `python3-pyside6.qtquick`). Senza, il notch passa da XWayland e resta comunque in alto e fuori dalla barra.
+**Novità 0.4.0** — **Dagli il nome che vuoi**: Personalizza → Ascolto → *Come si chiama* (es. Marco) e scegli *Ehi Marco* come parola per svegliarlo. Puoi anche dire tutto di fila: “Marco, che tempo fa domani?”. Si presenta col suo nome. La prima volta scarica un piccolo modello (75 MB).
 
 **Novità 0.3.0**
 - **Chat**: pulsante 💬 nel notch → finestra con tutte le conversazioni salvate: cerca, riapri (NEXUS ricorda il discorso), nuova chat, elimina; scrivi o parla da lì

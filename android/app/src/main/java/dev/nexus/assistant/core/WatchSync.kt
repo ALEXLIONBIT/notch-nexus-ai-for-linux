@@ -38,7 +38,7 @@ object WatchSync {
         val list = Prefs.providers.filter { it.kind != "device" }
         val a = JSONArray(); list.forEach { a.put(it.toJson()) }
         val active = Prefs.activeProvider.takeIf { id -> list.any { it.id == id } } ?: list.firstOrNull()?.id ?: ""
-        return JSONObject().put("providers", a).put("activeProvider", active).put("userName", Prefs.userName)
+        return JSONObject().put("providers", a).put("activeProvider", active).put("userName", Prefs.userName).put("agentName", Prefs.agentName)
             .put("theme", Prefs.theme).put("led", Prefs.led).put("accent", Prefs.accent).put("shellCustom", Prefs.shellCustom)
             .put("bgCustom", Prefs.bgCustom).put("eyeStyle", Prefs.eyeStyle).put("mouthStyle", Prefs.mouthStyle)
             .put("dotShape", Prefs.dotShape).put("glow", Prefs.glow.toDouble()).put("customEye", Prefs.customEye)

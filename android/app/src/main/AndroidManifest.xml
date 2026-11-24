@@ -3,6 +3,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- ascolto sempre attivo del nome dell'agente (WakeService) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -63,6 +67,11 @@
                 <data android:scheme="wear" android:host="*" android:pathPrefix="/nexus" />
             </intent-filter>
         </service>
+
+        <service
+            android:name=".core.WakeService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <!-- assistente digitale predefinito (al posto di Gemini) -->
         <service

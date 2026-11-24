@@ -9,3 +9,4 @@ rootProject.name = "NexusAndroid"
 include(":app")
 include(":wear")
 include(":llama")
+include(":whisper")

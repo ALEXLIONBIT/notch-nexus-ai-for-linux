@@ -25,6 +25,7 @@ class NexusSession(ctx: android.content.Context) : VoiceInteractionSession(ctx) 
         super.onShow(args, showFlags)
         current = WeakReference(this)
         val i = Intent(context, AssistActivity::class.java).putExtra("fromAssist", true)
+        args?.getString("ask")?.takeIf { it.isNotBlank() }?.let { i.putExtra("ask", it) }   // "Marco, che ore sono?"
         runCatching { startAssistantActivity(i) }.onFailure {
             context.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }

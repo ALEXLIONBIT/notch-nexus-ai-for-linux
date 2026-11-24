@@ -355,6 +355,8 @@ fun BrainScreen() {
         }
         PrimaryButton("+ Aggiungi cervello", Modifier.fillMaxWidth()) { adding = true }
         Spacer(Modifier.height(8.dp))
+        NameSection()
+        Spacer(Modifier.height(8.dp))
         DeviceModelsSection()
         Spacer(Modifier.height(8.dp))
         SectionTitle("Tailscale")
@@ -552,4 +554,53 @@ fun ChatsScreen(onOpen: () -> Unit) {
             }
         }
     }
+}
+
+
+/** Come si chiama l'agente e ascolto sempre attivo del suo nome ("Ehi Marco"). */
+@Composable
+private fun NameSection() {
+    val th = Look.theme
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val W = dev.nexus.assistant.core.WakeService
+    var name by remember { mutableStateOf(Prefs.agentName) }
+    var msg by remember { mutableStateOf("") }
+    val perms = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { W.start(ctx) }
+    SectionTitle("Nome")
+    Text("Dagli il nome che vuoi: si presenta così e, con l'ascolto sempre attivo, si sveglia quando lo chiami.",
+        color = th.inkSoft, fontSize = 13.sp)
+    NexusField(name, "Come si chiama (es. Marco, Jarvis, Robo)") { name = it.take(30) }
+    if (name.trim().isNotBlank() && name.trim() != Prefs.agentName)
+        SoftButton("Salva il nome", Modifier.fillMaxWidth()) {
+            Prefs.agentName = name.trim(); Prefs.save()
+            if (W.running) { W.stop(ctx); W.start(ctx) }
+        }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Ascolto sempre attivo", color = th.ink, fontWeight = FontWeight.SemiBold)
+            Text(if (W.running) "Di' “Ehi ${Prefs.agentName}” anche a schermo spento" else "Spento: si attiva col tasto o aprendo l'app",
+                color = th.inkSoft, fontSize = 12.sp)
+        }
+        androidx.compose.material3.Switch(checked = Prefs.wakeAlways, onCheckedChange = { on ->
+            Prefs.wakeAlways = on; Prefs.save()
+            if (!on) { W.stop(ctx); msg = ""; return@Switch }
+            scope.launch {
+                if (!dev.nexus.whisper.WhisperNative.ready(ctx)) {
+                    msg = "Scarico il riconoscimento vocale…"
+                    val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        runCatching { dev.nexus.whisper.WhisperNative.download(ctx) { mb, tot -> msg = "Scarico il riconoscimento vocale… $mb / $tot MB" } }
+                    }
+                    if (r.isFailure) { msg = "Errore: ${r.exceptionOrNull()?.message}"; Prefs.wakeAlways = false; Prefs.save(); return@launch }
+                }
+                msg = "Consuma un po' di batteria: Android mostra una notifica fissa finché è acceso."
+                val need = mutableListOf(android.Manifest.permission.RECORD_AUDIO)
+                if (android.os.Build.VERSION.SDK_INT >= 33) need += android.Manifest.permission.POST_NOTIFICATIONS
+                perms.launch(need.toTypedArray())
+            }
+        }, colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = Look.led))
+    }
+    if (msg.isNotBlank()) Text(msg, color = if (msg.startsWith("Errore")) Color(0xFFFF5A6E) else th.inkSoft, fontSize = 12.sp)
+    if (W.lastHeard.isNotBlank()) Text("Ultima volta ho sentito: “${W.lastHeard}”", color = th.inkSoft, fontSize = 12.sp)
 }
