@@ -9,6 +9,9 @@ import uuid
 
 from .config import Config
 from .bus import Bus
+from .osys import IS_WIN, FROZEN, PACKAGED, APPIMAGE, RELEASE_PREFIX
+
+RELEASES = "https://api.github.com/repos/ALEXLIONBIT/notch-nexus-ai-for-linux/releases"
 
 YES = re.compile(r"\b(s[iì]|ok|okay|certo|vai|procedi|conferm|fallo|esatto|d'accordo)\b", re.I)
 NO = re.compile(r"\b(no|annulla|ferma|stop|lascia|non farlo|aspetta)\b", re.I)
@@ -39,6 +42,7 @@ class Nexus:
         self.pending = {}
         self.stopped = False
         self.ears = self.voice = self.stt = self.brain = None
+        self.chat = None                       # chat in corso (vedi chats.py)
 
     # ---------- avvio ----------
     def start(self):
@@ -63,23 +67,31 @@ class Nexus:
         threading.Thread(target=self.update_check, daemon=True).start()
         self.set_state("idle", self._idle_text())
         print("NEXUS pronto.")
-        threading.Event().wait()
+        if not FROZEN:
+            threading.Event().wait()          # nell'app Windows il backend gira in un thread e la UI tiene vivo il processo
 
     def _idle_text(self):
-        w = self.cfg["wake_word"].replace("_", " ").title()
-        return f"Di' “{w}”" if self.ears and self.ears.oww else "Clicca 🎤 per parlare"
+        w = ("Ehi " + (self.cfg.get("agent_name") or "Nexus")) if self.cfg["wake_word"] == "name" \
+            else self.cfg["wake_word"].replace("_", " ").title()
+        if self.ears and self.ears.stream is None:
+            return "Nessun microfono: scrivimi"
+        return f"Di' “{w}”" if self.ears and (self.ears.oww or self.ears.spotter) else "Clicca 🎤 per parlare"
 
     def set_state(self, state, detail=""):
         self.state, self.detail = state, detail
         self.bus.emit("state", state=state, detail=detail)
 
     def on_connect(self):
+        if IS_WIN or PACKAGED:
+            from . import __version__
+            self.bus.emit("platform", os="windows" if IS_WIN else "linux", version=__version__)
         from .tools.apps import list_browsers
         from .providers import PRESETS
         self.bus.emit("browsers", list=list_browsers())
         self.bus.emit("presets", presets=PRESETS)
         self.bus.emit("config", config=self.cfg.public())
         self.bus.emit("state", state=self.state, detail=getattr(self, "detail", ""))
+        self._emit_chat()
 
     # ---------- comandi dalla UI ----------
     def on_command(self, msg):
@@ -109,6 +121,18 @@ class Nexus:
             threading.Thread(target=self.update_check, daemon=True).start()
         elif t == "update_apply":
             threading.Thread(target=self.update_apply, daemon=True).start()
+        elif t == "tailscale_status":
+            from . import tailnet
+            threading.Thread(target=lambda: self.bus.emit("tailscale", **tailnet.status()), daemon=True).start()
+        elif t == "tailscale_connect":
+            from . import tailnet
+            threading.Thread(target=tailnet.connect, args=(lambda d: self.bus.emit("tailscale", **d),), daemon=True).start()
+        elif t == "setup_choice":
+            threading.Thread(target=self.setup_choice, args=(msg.get("choice"),), daemon=True).start()
+        elif t in ("chats_list", "chat_open", "chat_new", "chat_delete", "chat_rename"):
+            self.chat_command(t, msg)
+        elif t in ("models_installed", "models_search", "model_pull", "model_delete", "model_use"):
+            threading.Thread(target=self.models_command, args=(t, msg), daemon=True).start()
         elif t in ("provider_save", "provider_delete", "provider_models", "provider_test"):
             threading.Thread(target=self.provider_command, args=(t, msg), daemon=True).start()
 
@@ -142,6 +166,8 @@ class Nexus:
             self.voice.load()
         if self.ears and old["wake_word"] != self.cfg["wake_word"]:
             self.ears.load_wakeword()
+        if self.brain and old.get("agent_name") != self.cfg.get("agent_name"):
+            self.brain.history = []            # nuovo nome: la memoria breve riparte
         self.bus.emit("config", config=self.cfg.public())
         if self.state == "idle":
             self.set_state("idle", self._idle_text())
@@ -159,12 +185,104 @@ class Nexus:
         return "Automode attivo: faccio tutto senza chiederti conferma." if self.cfg["auto_mode"] \
             else "Modalità manuale: ti chiederò conferma prima delle cose importanti."
 
-    # ---------- aggiornamenti (git) ----------
+    # ---------- primo avvio (Windows e AppImage): dove gira il cervello ----------
+    def setup_choice(self, choice):
+        """'local' = installa Ollama (winget) e scarica un modello adatto al PC; 'provider' = lo sceglie l'utente."""
+        def status(text, pct=-1, done=False, error=""):
+            self.bus.emit("setup_status", text=text, pct=pct, done=done, error=error)
+        if choice != "local":
+            self.cfg["setup_done"] = True
+            self.cfg.save()
+            self.bus.emit("config", config=self.cfg.public())
+            status("", done=True)
+            return
+        try:
+            from . import winsetup
+            model = winsetup.install_local_brain(status)
+            p = self.cfg.get_provider("local")
+            if p is None:
+                from .providers import DEFAULT_PROVIDER
+                p = dict(DEFAULT_PROVIDER)
+                self.cfg["providers"].append(p)
+            p["model"] = model
+            self.cfg["provider"] = "local"
+            self.cfg["setup_done"] = True
+            self.cfg.save()
+            self.bus.emit("config", config=self.cfg.public())
+            status(f"Fatto! Il cervello {model} gira su questo PC.", 100, done=True)
+        except Exception as e:
+            traceback.print_exc()
+            status("", error=str(e)[:200])
+
+    # ---------- aggiornamenti (git dal sorgente, release GitHub per Windows e AppImage) ----------
+    def _win_latest(self):
+        import urllib.request
+        req = urllib.request.Request(RELEASES + "?per_page=30", headers={"User-Agent": "nexus-assistant"})
+        rels = json.loads(urllib.request.urlopen(req, timeout=20).read())
+        rels = [r for r in rels if r.get("tag_name", "").startswith(RELEASE_PREFIX) and not r.get("draft")]
+        return rels[0] if rels else None
+
+    def _win_update_check(self):
+        from . import __version__
+
+        def ver(v):
+            return tuple(int(x) if x.isdigit() else 0 for x in v.split("."))
+        try:
+            r = self._win_latest()
+            latest = r["tag_name"].removeprefix(RELEASE_PREFIX) if r else __version__
+            newer = ver(latest) > ver(__version__)
+            news = [l.strip("-* ").strip() for l in (r.get("body") or "").splitlines() if l.strip().startswith(("-", "*"))][:6] if newer else []
+            self.bus.emit("update_status", current=__version__, behind=1 if newer else 0,
+                          news=[f"Versione {latest}"] + ["• " + n for n in news] if newer else [], error="")
+        except Exception as e:
+            self.bus.emit("update_status", current=__version__, behind=0, news=[], error=str(e)[:160])
+
+    def _win_update_apply(self):
+        """Scarica l'installer nuovo, lo avvia in silenzio e chiude NEXUS (l'installer lo riapre)."""
+        import os
+        import urllib.request
+        from .config import CACHE
+        self.bus.emit("update_status", current="", behind=0, news=[], error="", working=True)
+        try:
+            r = self._win_latest()
+            ext = ".exe" if IS_WIN else ".appimage"
+            asset = next(a for a in r["assets"] if a["name"].lower().endswith(ext))
+            dest = CACHE / asset["name"]
+            req = urllib.request.Request(asset["browser_download_url"], headers={"User-Agent": "nexus-assistant"})
+            with urllib.request.urlopen(req, timeout=60) as src, open(dest, "wb") as f:
+                while True:
+                    b = src.read(1 << 20)
+                    if not b:
+                        break
+                    f.write(b)
+        except Exception as e:
+            self.bus.emit("update_status", current="", behind=0, news=[], error="download: " + str(e)[:150])
+            return
+        self.bus.emit("update_status", current="", behind=0, news=[], error="", restarting=True)
+        if not IS_WIN:
+            # AppImage: sostituisce il file con quello nuovo e lo riapre
+            import shutil
+            target = APPIMAGE or str(dest)
+            os.chmod(dest, 0o755)
+            if APPIMAGE:
+                shutil.move(str(dest), APPIMAGE + ".new")
+                os.replace(APPIMAGE + ".new", APPIMAGE)
+            subprocess.Popen(["sh", "-c", f'sleep 2; exec "{target}"'], start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(0.5)
+            os._exit(0)
+        subprocess.Popen(f'cmd /c timeout /t 2 /nobreak >nul & "{dest}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART',
+                         creationflags=0x08000000, close_fds=True)
+        time.sleep(0.5)
+        os._exit(0)
+
     def _git(self, *args, timeout=60):
         from .config import ROOT
         return subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, timeout=timeout)
 
     def update_check(self):
+        if IS_WIN or PACKAGED:
+            return self._win_update_check()
         try:
             cur = self._git("log", "-1", "--format=%h · %cd", "--date=format:%d/%m/%Y %H:%M").stdout.strip()
             f = self._git("fetch", "-q", "origin")
@@ -177,6 +295,8 @@ class Nexus:
             self.bus.emit("update_status", current="", behind=0, news=[], error=str(e)[:160])
 
     def update_apply(self):
+        if IS_WIN or PACKAGED:
+            return self._win_update_apply()
         from .config import ROOT
         self.bus.emit("update_status", current="", behind=0, news=[], error="", working=True)
         old_req = (ROOT / "backend/requirements.txt").read_text()
@@ -206,6 +326,107 @@ class Nexus:
             pass
 
     # ---------- provider ----------
+    # ---------- chat salvate ----------
+    def _current_chat(self):
+        """La chat in corso; dopo una pausa più lunga della memoria del cervello ne comincia una nuova."""
+        from . import chats
+        if self.chat is None or time.time() - self.chat["updated"] > self.cfg["memory_minutes"] * 60:
+            self.chat = chats.new()
+            if self.brain:
+                self.brain.history = []
+        return self.chat
+
+    def _chat_add(self, role, text):
+        from . import chats
+        c = self._current_chat()
+        chats.add(c, role, text)
+        if role == "assistant" and self.brain:
+            c["history"] = self.brain.history
+            chats.save(c)
+        self.bus.emit("chat_message", id=c["id"], title=c["title"], role=role, text=text)
+
+    def _emit_chat(self):
+        c = self.chat or {"id": "", "title": "", "messages": []}
+        self.bus.emit("chat", id=c["id"], title=c.get("title", ""), messages=c["messages"])
+
+    def chat_command(self, t, msg):
+        from . import chats
+        cid = msg.get("id", "")
+        if t == "chat_open":
+            c = chats.load(cid)
+            if c:
+                c["updated"] = time.time()          # riaperta: il discorso continua da qui
+                self.chat = c
+                if self.brain:
+                    self.brain.history = list(c.get("history") or [])
+                    self.brain.last = time.time()
+            self._emit_chat()
+            return
+        if t == "chat_new":
+            self.chat = None
+            if self.brain:
+                self.brain.history = []
+            self._emit_chat()
+        elif t == "chat_delete":
+            chats.delete(cid)
+            if self.chat and self.chat["id"] == cid:
+                self.chat = None
+                if self.brain:
+                    self.brain.history = []
+                self._emit_chat()
+        elif t == "chat_rename":
+            chats.rename(cid, msg.get("title", ""))
+            if self.chat and self.chat["id"] == cid:
+                self.chat = chats.load(cid)
+                self._emit_chat()
+        self.bus.emit("chats", list=chats.listing(msg.get("query", "")), query=msg.get("query", ""),
+                      current=self.chat["id"] if self.chat else "")
+
+    # ---------- modelli di Ollama (Personalizza → Modelli) ----------
+    def models_command(self, t, msg):
+        from . import models
+        p = models.target(self.cfg)
+        name = (msg.get("name") or "").strip()
+
+        def progress(text, pct=-1, done=False, error=""):
+            self.bus.emit("model_progress", name=name, text=text, pct=pct, done=done, error=error)
+        try:
+            if p is None:
+                raise RuntimeError("aggiungi prima un cervello Ollama (questo PC o un PC in rete)")
+            if t == "models_search":
+                from .winsetup import vram_mb
+                v = vram_mb()
+                rs = models.search(msg.get("query", ""))
+                for r in rs:
+                    for s in r["sizes"]:
+                        s["fit"] = models.fits(s["gb"], v)
+                self.bus.emit("models_search", results=rs, vram_gb=round(v / 1024, 1))
+                return
+            if t == "model_pull":
+                progress(f"Scarico {name}…", 0)
+                models.pull(p, name, progress)
+                if msg.get("use"):
+                    p["model"] = name
+                    self.cfg["provider"] = p["id"]
+                    self.cfg.save()
+                    self.bus.emit("config", config=self.cfg.public())
+                progress(f"{name} installato" + (" e in uso" if msg.get("use") else ""), 100, done=True)
+            elif t == "model_delete":
+                models.delete(p, name)
+            elif t == "model_use":
+                p["model"] = name
+                self.cfg["provider"] = p["id"]
+                self.cfg.save()
+                self.bus.emit("config", config=self.cfg.public())
+            self.bus.emit("models", target=p.get("name", ""), url=p.get("base_url", ""),
+                          current=p.get("model", ""), installed=models.installed(p), error="")
+        except Exception as e:
+            if t == "model_pull":
+                progress("", error=str(e)[:200])
+            else:
+                self.bus.emit("models", target=(p or {}).get("name", ""), url=(p or {}).get("base_url", ""),
+                              current=(p or {}).get("model", ""), installed=[], error=str(e)[:200])
+
     def provider_command(self, t, msg):
         from .providers import make, PRESETS
         cfg = self.cfg
@@ -252,8 +473,27 @@ class Nexus:
                 self.bus.emit("provider_result", ok=False, text=f"Connessione fallita: {str(e)[:160]}")
 
     # ---------- sessione di conversazione ----------
-    def on_wake(self):
-        self._spawn(None)
+    def on_wake(self, text=None, audio=None):
+        if not text or len(text.strip()) <= 2:
+            return self._spawn(None)
+        if audio is None or self.stt is None:
+            return self._spawn(text.strip())
+
+        def precise():
+            # Whisper tiny riconosce il nome ma sbaglia il resto: la domanda la ritrascrive quello principale
+            from .wakename import match
+            q = text.strip()
+            try:
+                full = self.stt.transcribe(audio)
+                ok, rest = match(full, self.cfg.get("agent_name") or "Nexus")
+                if ok and len(rest) > 2:
+                    q = rest
+                elif len(full.split()) > len(q.split()):
+                    q = full
+            except Exception as e:
+                print("trascrizione della domanda:", e)
+            self._spawn(q)
+        threading.Thread(target=precise, daemon=True).start()
 
     def _spawn(self, text):
         if self.brain is None or self.busy.locked():
@@ -261,6 +501,9 @@ class Nexus:
         threading.Thread(target=self.session, args=(text,), daemon=True).start()
 
     def listen_once(self, wait=5.0):
+        if self.ears.stream is None:
+            self.bus.emit("log", text="Nessun microfono: scrivimi la richiesta.")
+            return ""
         self.set_state("listening", "Ti ascolto…")
         audio = self.ears.record(wait=wait)
         if audio is None:
@@ -286,14 +529,17 @@ class Nexus:
                     if not text or self.stopped:
                         break
                 self.bus.emit("transcript", text=text)
+                self._chat_add("user", text)
                 quick = self.quick_command(text)
                 if quick:                              # comandi istantanei, senza passare dal cervello
+                    self._chat_add("assistant", quick)
                     self.bus.emit("reply", text=quick); self.set_state("speaking", ""); self.voice.speak(quick)
                     break
                 self.set_state("thinking", "Penso…")
                 t0 = time.time()
                 reply = self.brain.run(text)
                 self.log_chat(text, reply, time.time() - t0)
+                self._chat_add("assistant", reply)
                 if self.stopped:
                     break
                 self.bus.emit("reply", text=reply)

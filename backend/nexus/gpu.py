@@ -33,8 +33,9 @@ def llm_end():
 
 def vram_used_mb():
     try:
-        out = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
-                             capture_output=True, text=True, timeout=10).stdout
+        from .osys import run
+        out = run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                  capture_output=True, text=True, timeout=10).stdout
         return int(out.strip().splitlines()[0])
     except Exception:
         return -1

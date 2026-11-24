@@ -23,6 +23,34 @@ QtObject {
         Component.onCompleted: visible = true
     }
 
+    // chat salvate: si apre dal pulsante nel notch (al centro, con la tastiera)
+    property Window chatWin: ChatWindow {
+        store: root.store
+        LayerShell.Window.scope: "nexus-chat"
+        // nessuna ancora = al centro dello schermo (impostato qui: AnchorNone manca nelle versioni vecchie)
+        Component.onCompleted: LayerShell.Window.anchors = 0
+        LayerShell.Window.layer: LayerShell.Window.LayerTop
+        LayerShell.Window.exclusionZone: -1
+        LayerShell.Window.keyboardInteractivity: LayerShell.Window.KeyboardInteractivityOnDemand
+    }
+
+    // primo avvio (AppImage): scegli dove gira il cervello
+    property Window setupWin: Window {
+        id: setupWin
+        color: "transparent"
+        width: setupBox.implicitWidth
+        height: setupBox.implicitHeight
+        visible: root.store.connected && root.store.config.setup_done === false
+        LayerShell.Window.scope: "nexus-setup"
+        // nessuna ancora = al centro dello schermo (impostato qui: AnchorNone manca nelle versioni vecchie)
+        Component.onCompleted: LayerShell.Window.anchors = 0
+        LayerShell.Window.layer: LayerShell.Window.LayerOverlay
+        LayerShell.Window.exclusionZone: -1
+        LayerShell.Window.keyboardInteractivity: LayerShell.Window.KeyboardInteractivityOnDemand
+        Setup { id: setupBox; s: root.store; anchors.fill: parent }
+        onClosing: close => close.accepted = false
+    }
+
     property Window faceWin: Window {
         id: faceWin
         color: "transparent"

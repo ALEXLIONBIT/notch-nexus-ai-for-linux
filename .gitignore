@@ -6,3 +6,11 @@ android/.gradle/
 android/build/
 android/app/build/
 android/local.properties
+
+android/libs/
+android/local.properties
+android/wear/build/
+android/tsbridge/*.aar
+**/build/
+linux/dist/
+linux/build/

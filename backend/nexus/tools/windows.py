@@ -1,4 +1,5 @@
-"""Gestione finestre su KDE Plasma (Wayland) tramite script KWin caricati via D-Bus.
+"""Gestione finestre: KDE Plasma (Wayland) tramite script KWin caricati via D-Bus, altri desktop X11 con wmctrl,
+Windows con le API Win32 (_win_windows.py).
 
 Elenca, attiva, affianca (sinistra/destra/quarti), massimizza, riduce a icona e chiude finestre.
 I risultati tornano indietro tramite il journal (print dello script con un marcatore unico).
@@ -13,12 +14,16 @@ import uuid
 
 from . import tool
 from ..config import CACHE
+from ..osys import IS_WIN
+
+if IS_WIN:
+    from . import _win_windows as w32
 
 QDBUS = "qdbus6"
 
 
 def use_kwin():
-    return bool(shutil.which(QDBUS)) and "KDE" in os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+    return not IS_WIN and bool(shutil.which(QDBUS)) and "KDE" in os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
 
 
 # ---------------------------------------------------------------- X11 generico (wmctrl): Mint, XFCE, MATE…
@@ -122,6 +127,8 @@ def _ensure_open(ctx, app):
     q = json.dumps(app)
 
     def present(name):
+        if IS_WIN:
+            return w32.find(name) is not None
         if use_kwin():
             return run_kwin(f"out(find({json.dumps(name)}) ? 1 : 0);") == 1
         return _wm_find(name) is not None
@@ -132,8 +139,8 @@ def _ensure_open(ctx, app):
     if not a:
         return False
     ctx.step("🚀", f"Apro {a['name']}")
-    subprocess.Popen(["gtk-launch", a["id"]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     start_new_session=True)
+    from .apps import launch_app
+    launch_app(a)
     for _ in range(20):
         time.sleep(0.6)
         if present(app) or present(a["name"]):
@@ -168,6 +175,10 @@ if (!w) {{ out({{ok: false}}); }} else {{
 @tool("list_windows", "Elenca le finestre aperte (titolo e app).")
 def list_windows(ctx):
     ctx.step("🪟", "Guardo le finestre aperte")
+    if IS_WIN:
+        ws = w32.list_windows()
+        return "; ".join(f"{w['title']} ({w['app']}{', ridotta' if w['min'] else ''}{', attiva' if w['active'] else ''})"
+                         for w in ws) or "Non ci sono finestre aperte."
     if not use_kwin():
         ws = _wm_list()
         return "; ".join(f"{w['title']} ({w['app']})" for w in ws) or "Non ci sono finestre aperte."
@@ -188,6 +199,12 @@ def place_window(ctx, app, position):
     if not _ensure_open(ctx, app):
         return f"Non trovo né riesco ad aprire '{app}'."
     ctx.step("🪟", f"Metto {app} a {position}")
+    if IS_WIN:
+        w = w32.find(app)
+        if not w:
+            return f"Non trovo la finestra di '{app}'."
+        w32.place(w, POSITIONS[position])
+        return f"Ho messo “{w['title']}” a {position}."
     if not use_kwin():
         w = _wm_find(app)
         if not w:
@@ -229,6 +246,12 @@ def window_action(ctx, app, action):
     if not code:
         return f"Azione sconosciuta: {action}"
     ctx.step("🪟", f"{action.replace('_', ' ').capitalize()}: {app}")
+    if IS_WIN:
+        w = w32.find(app)
+        if not w:
+            return f"Non trovo nessuna finestra di '{app}'."
+        w32.action(w, action)
+        return f"Fatto ({action}) su “{w['title']}”."
     if not use_kwin():
         w = _wm_find(app)
         if not w:

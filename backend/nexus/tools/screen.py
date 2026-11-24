@@ -8,6 +8,7 @@ import time
 
 from . import tool, ToolResult
 from ..config import CACHE
+from ..osys import IS_WIN, run
 
 
 def _wait_file(path, tries=50):
@@ -20,10 +21,15 @@ def _wait_file(path, tries=50):
 
 def screenshot():
     """Screenshot dell'intero schermo. KDE: Spectacle; wlroots: grim; GNOME/Cinnamon/MATE: gnome-screenshot;
-    X11 in generale: Pillow (ImageGrab)."""
+    X11 in generale e Windows: Pillow (ImageGrab, schermo principale)."""
     import shutil
     path = CACHE / "screen.png"
     path.unlink(missing_ok=True)
+    if IS_WIN:
+        from . import _win_input  # noqa: F401  (pixel veri anche con lo schermo scalato)
+        from PIL import ImageGrab
+        ImageGrab.grab().save(path)
+        return path
     tries = []
     if shutil.which("spectacle"):
         tries.append(["spectacle", "-b", "-n", "-f", "-o", str(path)])
@@ -59,7 +65,7 @@ def small_copy(path, max_w=1024):
 
 def _langs():
     try:
-        out = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True).stdout
+        out = run(["tesseract", "--list-langs"], capture_output=True, text=True).stdout
         have = [l.strip() for l in out.splitlines()[1:]]
         sel = [l for l in ("ita", "eng") if l in have]
         return ["-l", "+".join(sel)] if sel else []
@@ -69,8 +75,8 @@ def _langs():
 
 def _ocr_band(img_path, langs):
     env = dict(os.environ, OMP_THREAD_LIMIT="1")      # un thread per striscia: le strisce vanno in parallelo
-    out = subprocess.run(["tesseract", str(img_path), "stdout", *langs, "--psm", "11", "tsv"],
-                         capture_output=True, text=True, timeout=60, env=env).stdout
+    out = run(["tesseract", str(img_path), "stdout", *langs, "--psm", "11", "tsv"],
+              capture_output=True, text=True, timeout=60, env=env).stdout
     words = []
     for r in csv.DictReader(io.StringIO(out), delimiter="\t", quoting=csv.QUOTE_NONE):
         txt = (r.get("text") or "").strip()
@@ -81,9 +87,69 @@ def _ocr_band(img_path, langs):
     return words
 
 
+def _ocr_windows(path):
+    """OCR integrato in Windows 10/11 (Windows.Media.Ocr): niente da installare, usa le lingue di Windows."""
+    import asyncio
+    from winrt.windows.globalization import Language
+    from winrt.windows.graphics.imaging import BitmapDecoder, BitmapPixelFormat, SoftwareBitmap
+    from winrt.windows.media.ocr import OcrEngine
+    from winrt.windows.storage import FileAccessMode, StorageFile
+    from PIL import Image
+
+    img = Image.open(path)
+    scale = 1.0
+    limit = int(OcrEngine.max_image_dimension or 2600)
+    src = path
+    if max(img.size) > limit:                         # immagine troppo grande per l'OCR di Windows
+        scale = limit / max(img.size)
+        src = CACHE / "ocr_win.png"
+        img.resize((int(img.width * scale), int(img.height * scale))).save(src)
+
+    async def go():
+        f = await StorageFile.get_file_from_path_async(str(src.resolve()))
+        stream = await f.open_async(FileAccessMode.READ)
+        bmp = await (await BitmapDecoder.create_async(stream)).get_software_bitmap_async()
+        if bmp.bitmap_pixel_format != BitmapPixelFormat.BGRA8:
+            bmp = SoftwareBitmap.convert(bmp, BitmapPixelFormat.BGRA8)
+        eng = None
+        for tag in ("it", "it-IT", "en-US"):
+            lang = Language(tag)
+            if OcrEngine.is_language_supported(lang):
+                eng = OcrEngine.try_create_from_language(lang)
+                break
+        eng = eng or OcrEngine.try_create_from_user_profile_languages()
+        if eng is None:
+            raise RuntimeError("nessuna lingua OCR installata in Windows")
+        return await eng.recognize_async(bmp)
+
+    res = asyncio.run(go())
+    out = []
+    for line in res.lines:
+        words = []
+        for w in line.words:
+            r = w.bounding_rect
+            words.append({"text": w.text, "x": int(r.x / scale), "y": int(r.y / scale),
+                          "w": int(r.width / scale), "h": int(r.height / scale)})
+        if not words:
+            continue
+        x0 = min(w["x"] for w in words); y0 = min(w["y"] for w in words)
+        x1 = max(w["x"] + w["w"] for w in words); y1 = max(w["y"] + w["h"] for w in words)
+        out.append({"text": " ".join(w["text"] for w in words), "x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0,
+                    "words": words})
+    out.sort(key=lambda l: (l["y"] // 15, l["x"]))
+    return out
+
+
 def ocr(path, bands=8):
     """Testo sullo schermo: [{text, x, y, w, h, words}] in pixel dello screenshot.
-    Veloce: metà risoluzione e 8 strisce lette in parallelo."""
+    Veloce: metà risoluzione e 8 strisce lette in parallelo. Su Windows usa l'OCR di sistema."""
+    if IS_WIN:
+        import shutil
+        try:
+            return _ocr_windows(path)
+        except Exception as e:
+            if not shutil.which("tesseract"):
+                raise RuntimeError(f"OCR non disponibile: {e}") from e
     from concurrent.futures import ThreadPoolExecutor
     from PIL import Image
     img = Image.open(path).convert("L")

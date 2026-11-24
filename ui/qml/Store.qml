@@ -18,7 +18,24 @@ Item {
     property var providerModels: []      // modelli caricati dal provider in modifica
     property string providerMsg: ""
     property var update: ({ current: "", behind: 0, news: [], error: "" })
+    // Personalizza → Modelli (Ollama del cervello attivo)
+    property var models: ({ target: "", url: "", current: "", installed: [], error: "" })
+    property var modelResults: []
+    // chat salvate
+    property bool chatOpen: false
+    property string chatId: ""
+    property string chatTitle: ""
+    property var chatMessages: []
+    property var chatList: []
+    property string chatQuery: ""
+    property real vramGb: 0
+    property bool modelSearching: false
+    property var modelProgress: ({ name: "", text: "", pct: -1, done: true, error: "" })
     property bool providerOk: true
+    property string platform: Qt.platform.os === "windows" ? "windows" : "linux"
+    property string appVersion: ""
+    property var setup: ({ text: "", pct: -1, done: false, error: "", working: false })
+    property var tailscale: ({ installed: false, state: "", ip: "", name: "", text: "", error: "", working: false })
     property bool connected: nexus.connected
     property bool fullscreen: false
     property bool settingsOpen: false
@@ -61,6 +78,7 @@ Item {
         var p = ledPalette.slice(); p[i - 2] = c.toString(); paletteStr = p.join(",")
     }
     property bool editorOpen: false
+    property bool setupWantsProvider: false
     property bool providerEditorRequest: false
     readonly property int eyeCols: 9
     readonly property int eyeRows: 9
@@ -193,12 +211,29 @@ Item {
                 stepsModel.append({ icon: d.icon, text: d.text })
                 while (stepsModel.count > 5) stepsModel.remove(0)
                 break
-            case "image": store.image = "file://" + d.path + "?t=" + Date.now(); break
+            case "image": store.image = "file:///" + d.path.replace(/\\/g, "/").replace(/^\/+/, "") + "?t=" + Date.now(); break
+            case "tailscale": store.tailscale = d; break
+            case "platform": store.platform = d.os; store.appVersion = d.version || ""; break
+            case "setup_status":
+                store.setup = { text: d.text, pct: d.pct, done: d.done, error: d.error, working: !d.done && !d.error }
+                if (d.done && store.setupWantsProvider) { store.settingsOpen = true; store.providerEditorRequest = true; store.fullscreen = true }
+                break
             case "confirm": store.confirmId = d.id || ""; store.confirmText = d.text || ""; break
             case "config": store.config = d.config; break
             case "browsers": store.browsers = d.list; break
             case "presets": store.presets = d.presets; break
             case "update_status": store.update = d; break
+            case "chat": store.chatId = d.id; store.chatTitle = d.title; store.chatMessages = d.messages; break
+            case "chat_message":
+                if (d.id !== store.chatId) { store.chatId = d.id; store.chatMessages = [] }
+                store.chatTitle = d.title
+                store.chatMessages = store.chatMessages.concat([{ role: d.role, text: d.text, time: Date.now() / 1000 }])
+                if (store.chatOpen) store.send("chats_list", { query: store.chatQuery })
+                break
+            case "chats": store.chatList = d.list; break
+            case "models": store.models = d; break
+            case "models_search": store.modelResults = d.results; store.vramGb = d.vram_gb; store.modelSearching = false; break
+            case "model_progress": store.modelProgress = d; break
             case "provider_models": store.providerModels = d.models; store.providerMsg = d.models.length + " modelli trovati"; store.providerOk = true; break
             case "provider_result": store.providerMsg = d.text; store.providerOk = d.ok; break
             case "session":

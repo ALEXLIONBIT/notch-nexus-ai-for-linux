@@ -5,8 +5,8 @@ import time
 from datetime import datetime
 
 
-SYSTEM = """Sei NEXUS, un assistente robot futuristico che vive dentro il computer {owner} \
-(Linux, desktop KDE Plasma). Parli SEMPRE in italiano, in modo amichevole e diretto.
+SYSTEM = """Ti chiami {name}: sei un assistente robot futuristico che vive dentro il computer {owner} \
+({os}). Parli SEMPRE in italiano, in modo amichevole e diretto.
 Le tue risposte vengono lette a voce: massimo 2 frasi brevi, niente elenchi, niente markdown, niente emoji.
 NON chiudere con domande di cortesia ("vuoi altro?", "cosa vuoi guardare?"): fai una domanda SOLO se ti manca \
 un'informazione indispensabile per finire il compito. Altrimenti termina con una frase affermativa.
@@ -125,8 +125,9 @@ class Brain:
             self.history = []
         self.last = time.time()
         now = datetime.now().strftime("%A %d %B %Y, %H:%M")
+        from .osys import os_name
         msgs = [{"role": "system", "content": SYSTEM.format(
-            now=now, owner=f"di {self.cfg['user_name']}" if self.cfg.get("user_name") else "dell'utente")}, *self.history,
+            now=now, os=os_name(), name=(self.cfg.get("agent_name") or "Nexus").strip(), owner=f"di {self.cfg['user_name']}" if self.cfg.get("user_name") else "dell'utente")}, *self.history,
                 {"role": "user", "content": user_text}]
         reply = "Ho fatto troppi passaggi senza finire, riprova con una richiesta più semplice."
         used_tools, nudged = False, False

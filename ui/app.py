@@ -5,10 +5,11 @@ import os
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(os.environ.get("NEXUS_UI_DIR") or Path(__file__).resolve().parent)
 LAYER_QML = Path("/usr/lib/qt6/qml/org/kde/layershell")
+# nell'AppImage il Qt incluso non può caricare il layer-shell di sistema (versioni diverse): finestre normali
 USE_LAYER = os.environ.get("XDG_SESSION_TYPE") == "wayland" and LAYER_QML.exists() \
-    and os.environ.get("NEXUS_NO_LAYERSHELL") != "1"
+    and os.environ.get("NEXUS_NO_LAYERSHELL") != "1" and not getattr(sys, "frozen", False)
 if USE_LAYER:
     os.environ["QT_WAYLAND_SHELL_INTEGRATION"] = "layer-shell"
 
@@ -56,7 +57,8 @@ class Bridge(QObject):
     @Slot()
     def quit(self):
         """Unico modo per chiudere NEXUS: Personalizza → Esci (Alt+F4 viene ignorato)."""
-        QGuiApplication.instance().quit()
+        # exit() e non quit(): su Qt 6 quit() chiede alle finestre di chiudersi e le nostre rifiutano (per Alt+F4)
+        QGuiApplication.instance().exit(0)
 
     @Slot(str, "QVariantMap")
     def send(self, type_, data):
@@ -65,10 +67,11 @@ class Bridge(QObject):
 
 
 def main():
-    app = QGuiApplication(sys.argv)
+    app = QGuiApplication.instance() or QGuiApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setOrganizationName("nexus")
     app.setApplicationName("nexus-ui")
+    app.setDesktopFileName("nexus-assistant")      # icona giusta nella barra (non quella generica di Wayland)
     for f in sorted((HERE / "fonts").glob("*.ttf")):
         QFontDatabase.addApplicationFont(str(f))
     engine = QQmlApplicationEngine()

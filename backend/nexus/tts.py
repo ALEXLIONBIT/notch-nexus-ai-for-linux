@@ -22,10 +22,33 @@ class Voice:
         self._stop = threading.Event()
         self.load()
 
+    def _voice_path(self):
+        """La voce scelta: nella cartella delle voci, tra quelle incluse nell'app, oppure scaricata al volo."""
+        name = self.cfg["voice"]
+        path = VOICES_DIR / f"{name}.onnx"
+        if path.exists():
+            return path
+        from .config import ROOT
+        bundled = ROOT / "voices" / f"{name}.onnx"
+        if bundled.exists():
+            return bundled
+        # es. it_IT-paola-medium → it/it_IT/paola/medium/it_IT-paola-medium.onnx
+        lang, who, q = name.split("-", 2)
+        url = (f"https://huggingface.co/rhasspy/piper-voices/resolve/main/{lang.split('_')[0]}/{lang}/{who}/{q}/{name}")
+        import urllib.request
+        self.bus.emit("state", state="loading", detail="Scarico la voce…")
+        for ext in (".onnx.json", ".onnx"):
+            tmp = VOICES_DIR / f"{name}{ext}.part"
+            req = urllib.request.Request(url + ext, headers={"User-Agent": "nexus-assistant"})
+            with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as f:
+                f.write(r.read())
+            tmp.replace(VOICES_DIR / f"{name}{ext}")
+        return path
+
     def load(self):
         try:
             from piper import PiperVoice
-            path = VOICES_DIR / f"{self.cfg['voice']}.onnx"
+            path = self._voice_path()
             self.voice = PiperVoice.load(str(path))
             print("voce pronta:", path.name)
         except Exception as e:
@@ -92,6 +115,11 @@ class Voice:
                     if levels:
                         self.bus.emit("level", v=float(min(1.0, np.sqrt(np.mean(b ** 2)) * 4)))
                     out.write(b.reshape(-1, 1))
+        except Exception as e:                  # nessuna uscita audio (casse staccate, PC senza scheda audio)
+            if not getattr(self, "_no_out", False):
+                self._no_out = True
+                print("uscita audio non disponibile:", e)
+                self.bus.emit("log", text="Nessuna uscita audio: le risposte restano solo scritte.")
         finally:
             if levels:
                 self.bus.emit("level", v=0)

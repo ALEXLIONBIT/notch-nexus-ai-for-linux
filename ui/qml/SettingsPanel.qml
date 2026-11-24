@@ -262,16 +262,36 @@ Rectangle {
             }
             Text {
                 Layout.preferredWidth: col.width; wrapMode: Text.Wrap
-                text: "Puoi anche dire “Hey Jarvis, mettiti in automode” o “torna in manuale”. In Auto i comandi distruttivi (formattare dischi, cancellare il sistema) restano comunque bloccati."
+                text: "Puoi anche dire “mettiti in automode” o “torna in manuale”. In Auto i comandi distruttivi (formattare dischi, cancellare il sistema) restano comunque bloccati."
                 color: panel.s.inkSoft; font { family: panel.s.sansFamily; pixelSize: 11 }
             }
 
             // ---------- ascolto ----------
             Section { text: "Ascolto" }
+            Heading { text: "Come si chiama" }
+            TextField {
+                id: agentName
+                Layout.preferredWidth: col.width
+                text: panel.cfg.agent_name || "Nexus"
+                placeholderText: "Il nome del tuo assistente (es. Marco, Jarvis, Robo)"
+                color: panel.s.ink; placeholderTextColor: panel.s.inkSoft
+                font { family: panel.s.sansFamily; pixelSize: 13 }
+                leftPadding: 14; maximumLength: 30
+                background: Rectangle { implicitHeight: 38; radius: 19; color: panel.chip }
+                onEditingFinished: if (text.trim() && text.trim() !== panel.cfg.agent_name) panel.sendCfg("agent_name", text.trim())
+            }
             Heading { text: "Parola per svegliarlo" }
             Chips {
-                options: ["hey_jarvis", "alexa", "hey_mycroft"]; labels: ["Hey Jarvis", "Alexa", "Hey Mycroft"]
+                options: ["name", "hey_jarvis", "alexa", "hey_mycroft"]
+                labels: ["Ehi " + (panel.cfg.agent_name || "Nexus"), "Hey Jarvis", "Alexa", "Hey Mycroft"]
                 current: panel.cfg.wake_word || ""; onPicked: v => panel.sendCfg("wake_word", v)
+            }
+            Text {
+                visible: panel.cfg.wake_word === "name"
+                Layout.preferredWidth: col.width; wrapMode: Text.Wrap
+                text: "Chiamalo per nome: “Ehi " + (panel.cfg.agent_name || "Nexus") + "” oppure tutto di fila, “"
+                      + (panel.cfg.agent_name || "Nexus") + ", che tempo fa domani?”. La prima volta scarica un piccolo modello (75 MB)."
+                color: panel.s.inkSoft; font { family: panel.s.sansFamily; pixelSize: 11 }
             }
             Chips {
                 options: ["on", "off"]; labels: ["Ascolto sempre attivo", "Solo col pulsante"]
@@ -320,6 +340,104 @@ Rectangle {
                 Layout.preferredWidth: col.width
                 text: "+ Aggiungi provider"; size: 40; tint: panel.s.ink; fill: panel.chip
                 onClicked: { editor.open(null); panel.providerOpen = true }
+            }
+
+            // ---------- modelli ----------
+            Section { text: "Modelli" }
+            Text {
+                Layout.preferredWidth: col.width; wrapMode: Text.Wrap
+                color: panel.s.models.error ? "#ff5a6e" : panel.s.inkSoft
+                font { family: panel.s.sansFamily; pixelSize: 12 }
+                Component.onCompleted: panel.s.send("models_installed")
+                text: panel.s.models.error ? "Errore: " + panel.s.models.error
+                    : "Cerca, scarica e cambia il cervello su " + (panel.s.models.target || "Ollama")
+                      + (panel.s.vramGb > 0 ? " · scheda video " + panel.s.vramGb + " GB" : "")
+            }
+            Repeater {
+                model: panel.s.models.installed || []
+                RowLayout {
+                    readonly property bool inUse: modelData.name === panel.s.models.current
+                    Layout.preferredWidth: col.width; spacing: 8
+                    Text { text: (parent.inUse ? "● " : "") + modelData.name; color: panel.s.ink; elide: Text.ElideRight
+                           Layout.fillWidth: true; font { family: panel.s.sansFamily; pixelSize: 13; weight: parent.inUse ? Font.Bold : Font.Normal } }
+                    Text { text: modelData.size_gb + " GB"; color: panel.s.inkSoft; font { family: panel.s.sansFamily; pixelSize: 11 } }
+                    IconButton { visible: !parent.inUse; text: "Usa"; size: 28; tint: panel.s.ink; fill: panel.chip
+                        onClicked: panel.s.send("model_use", { name: modelData.name }) }
+                    IconButton { visible: !parent.inUse; glyph: "close"; size: 28; tint: panel.s.inkSoft; tip: "Elimina"
+                        onClicked: panel.s.send("model_delete", { name: modelData.name }) }
+                }
+            }
+            TextField {
+                id: modelQuery
+                Layout.preferredWidth: col.width
+                placeholderText: "Cerca un modello (qwen, gemma, llama, mistral…)"
+                color: panel.s.ink; placeholderTextColor: panel.s.inkSoft
+                font { family: panel.s.sansFamily; pixelSize: 13 }
+                leftPadding: 14
+                background: Rectangle { implicitHeight: 38; radius: 19; color: panel.chip }
+                onAccepted: { panel.s.modelSearching = true; panel.s.send("models_search", { query: text.trim() }) }
+            }
+            Text {
+                visible: panel.s.modelSearching || (panel.s.modelProgress.text !== "" && !panel.s.modelProgress.done) || panel.s.modelProgress.error !== ""
+                Layout.preferredWidth: col.width; wrapMode: Text.Wrap
+                color: panel.s.modelProgress.error ? "#ff5a6e" : panel.s.ink
+                font { family: panel.s.sansFamily; pixelSize: 12 }
+                text: panel.s.modelProgress.error ? "Non installato: " + panel.s.modelProgress.error
+                    : panel.s.modelSearching ? "Cerco…" : panel.s.modelProgress.text
+            }
+            Rectangle {
+                visible: !panel.s.modelProgress.done && panel.s.modelProgress.pct >= 0
+                Layout.preferredWidth: col.width; height: 6; radius: 3; color: panel.chip
+                Rectangle { width: parent.width * Math.max(0, panel.s.modelProgress.pct) / 100; height: parent.height; radius: 3; color: panel.s.led }
+            }
+            Repeater {
+                model: panel.s.modelResults
+                ColumnLayout {
+                    Layout.preferredWidth: col.width; spacing: 4
+                    Text { text: modelData.name + (modelData.caps.length ? "   " + modelData.caps.join(" · ") : "")
+                           color: panel.s.ink; font { family: panel.s.sansFamily; pixelSize: 13; weight: Font.Bold } }
+                    Text { text: modelData.desc; color: panel.s.inkSoft; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
+                           Layout.preferredWidth: col.width; font { family: panel.s.sansFamily; pixelSize: 11 } }
+                    Flow {
+                        Layout.preferredWidth: col.width; spacing: 6
+                        Repeater {
+                            model: modelData.sizes.length ? modelData.sizes : [{ tag: "latest", gb: null, fit: "" }]
+                            IconButton {
+                                readonly property string full: parent.parent.modelName + ":" + modelData.tag
+                                text: modelData.tag + (modelData.gb ? " · " + modelData.gb + " GB" : "")
+                                tip: modelData.fit === "gpu" ? "Entra nella scheda video: veloce"
+                                   : modelData.fit === "cpu" ? "Non entra nella scheda video: va, ma lento"
+                                   : modelData.fit === "big" ? "Troppo grande per questo PC" : "Scarica e usa"
+                                size: 28; tint: modelData.fit === "gpu" ? "#0b1015" : panel.s.ink
+                                fill: modelData.fit === "gpu" ? panel.s.led : modelData.fit === "big" ? (panel.s.dark ? "#4a2a30" : "#f6dde1") : panel.chip
+                                enabled: panel.s.modelProgress.done
+                                onClicked: panel.s.send("model_pull", { name: full, use: true })
+                            }
+                        }
+                    }
+                    readonly property string modelName: modelData.name
+                }
+            }
+
+            // ---------- tailscale ----------
+            Section { text: "Tailscale" }
+            Text {
+                Layout.preferredWidth: col.width; wrapMode: Text.Wrap
+                color: panel.s.tailscale.error ? "#ff5a6e" : panel.s.inkSoft
+                font { family: panel.s.sansFamily; pixelSize: 12 }
+                Component.onCompleted: panel.s.send("tailscale_status")
+                text: panel.s.tailscale.error ? "Errore: " + panel.s.tailscale.error
+                    : panel.s.tailscale.text ? panel.s.tailscale.text
+                    : !panel.s.tailscale.installed ? "Tailscale non è installato: collega telefono, orologio e altri PC al tuo NEXUS anche fuori casa."
+                    : panel.s.tailscale.state === "Running" ? "Collegato come " + panel.s.tailscale.name + " (" + panel.s.tailscale.ip + ")"
+                    : "Tailscale è installato ma non collegato."
+            }
+            RowLayout {
+                spacing: 8
+                IconButton { visible: panel.s.tailscale.state !== "Running"; enabled: !panel.s.tailscale.working
+                    text: panel.s.tailscale.working ? "Mi collego…" : "Collega Tailscale"; size: 34; tint: "#0b1015"; fill: panel.s.led
+                    onClicked: panel.s.send("tailscale_connect") }
+                IconButton { text: "Aggiorna stato"; size: 34; tint: panel.s.ink; fill: panel.chip; onClicked: panel.s.send("tailscale_status") }
             }
 
             // ---------- aggiornamenti ----------

@@ -46,16 +46,17 @@ class AssistActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent { AssistSheet(onClose = { close() }) }
-        startListeningIfPossible()
+        startListeningIfPossible(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        startListeningIfPossible()
+        startListeningIfPossible(intent)
     }
 
-    private fun startListeningIfPossible() {
+    private fun startListeningIfPossible(i: Intent? = null) {
         if (Prefs.providers.isEmpty()) return
+        i?.getStringExtra("ask")?.takeIf { it.isNotBlank() }?.let { Core.ask(it); return }   // domanda detta dopo il nome
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             startActivity(Intent(this, MainActivity::class.java).putExtra("askMic", true)); finish(); return
         }

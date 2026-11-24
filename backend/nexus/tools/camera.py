@@ -4,11 +4,42 @@ import subprocess
 
 from . import tool, ToolResult
 from ..config import CACHE
+from ..osys import IS_WIN
+
+
+def _capture_windows(out):
+    """Windows: OpenCV con DirectShow/Media Foundation, prima webcam a colori che risponde."""
+    import time
+    import cv2
+    for idx in range(3):
+        for api in (cv2.CAP_DSHOW, cv2.CAP_MSMF):
+            cap = cv2.VideoCapture(idx, api)
+            if not cap.isOpened():
+                cap.release()
+                continue
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            frame, t0 = None, time.time()
+            while time.time() - t0 < 1.8:                # l'esposizione automatica si sistema
+                ok, f = cap.read()
+                if ok:
+                    frame = f
+            cap.release()
+            if frame is not None and frame.ndim == 3:
+                h, w = frame.shape[:2]
+                if w > 1024:
+                    frame = cv2.resize(frame, (1024, int(h * 1024 / w)))
+                cv2.imwrite(str(out), frame, [cv2.IMWRITE_JPEG_QUALITY, 88])
+                _brighten(out)
+                return out
+    raise RuntimeError("non riesco ad accedere alla webcam (è usata da un'altra app o la privacy di Windows la blocca?)")
 
 
 def capture():
     out = CACHE / "camera.jpg"
     out.unlink(missing_ok=True)
+    if IS_WIN:
+        return _capture_windows(out)
     devices = sorted(glob.glob("/dev/video*")) or ["/dev/video0"]
     for dev in devices:                                  # la prima a colori che funziona
         fmts = subprocess.run(["v4l2-ctl", "-d", dev, "--list-formats"], capture_output=True, text=True).stdout

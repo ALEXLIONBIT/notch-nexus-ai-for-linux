@@ -58,6 +58,7 @@ import dev.nexus.assistant.core.PRESETS
 import dev.nexus.assistant.core.Prefs
 import dev.nexus.assistant.core.Provider
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 @Composable
 fun SectionTitle(t: String) = Text(t, color = Look.theme.ink, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold,
@@ -335,7 +336,7 @@ fun BrainScreen() {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Cervello", color = th.ink, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
         Text("Dove gira l'intelligenza: il tuo PC (in casa o via Tailscale), un servizio online con chiave API, " +
-            "oppure il telefono stesso (sconsigliato).", color = th.inkSoft, fontSize = 14.sp)
+            "oppure un modello che gira sul telefono, anche senza internet.", color = th.inkSoft, fontSize = 14.sp)
         Prefs.providers.forEach { p ->
             val on = Prefs.active()?.id == p.id
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(if (on) chipColor() else Color.Transparent)
@@ -353,6 +354,50 @@ fun BrainScreen() {
             }
         }
         PrimaryButton("+ Aggiungi cervello", Modifier.fillMaxWidth()) { adding = true }
+        Spacer(Modifier.height(8.dp))
+        NameSection()
+        Spacer(Modifier.height(8.dp))
+        DeviceModelsSection()
+        Spacer(Modifier.height(8.dp))
+        SectionTitle("Tailscale")
+        Text("Per usare il PC di casa anche fuori casa senza l'app Tailscale: NEXUS si collega da solo alla tua rete Tailscale.",
+            color = th.inkSoft, fontSize = 13.sp)
+        val tsCtx = androidx.compose.ui.platform.LocalContext.current
+        val TsO = dev.nexus.assistant.core.Ts
+        Text("Stato: " + TsO.label + if (TsO.name.isNotBlank()) " (${TsO.name.substringBefore('.')})" else "", color = th.ink, fontSize = 13.sp)
+        androidx.compose.runtime.LaunchedEffect(TsO.authUrl) {
+            if (TsO.state == "NeedsLogin" && TsO.authUrl.isNotBlank() && Prefs.tailscale)
+                runCatching { tsCtx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(TsO.authUrl))) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (TsO.state != "Running") SoftButton("Collega", Modifier.weight(1f)) {
+                Prefs.tailscale = true; Prefs.save(); TsO.start(tsCtx, "nexus-telefono")
+            } else SoftButton("Scollega", Modifier.weight(1f)) { TsO.logout(); Prefs.tailscale = false; Prefs.save() }
+            val tsScope = androidx.compose.runtime.rememberCoroutineScope()
+            SoftButton("Collega anche l'orologio", Modifier.weight(1f)) {
+                tsScope.launch {
+                    dev.nexus.assistant.core.WatchSync.status = runCatching {
+                        val nodes = com.google.android.gms.wearable.Wearable.getNodeClient(tsCtx).connectedNodes.await()
+                        if (nodes.isEmpty()) "Nessun orologio collegato" else {
+                            nodes.forEach { com.google.android.gms.wearable.Wearable.getMessageClient(tsCtx).sendMessage(it.id, "/nexus/tailscale", ByteArray(0)).await() }
+                            "Fra poco si apre qui il login per l'orologio: approvalo."
+                        }
+                    }.getOrElse { "Non riesco: ${it.message?.take(60)}" }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        SectionTitle("Orologio Wear OS")
+        Text("Con NEXUS per Wear OS sull'orologio, cervelli e aspetto arrivano da soli. Se non succede, premi qui.",
+            color = th.inkSoft, fontSize = 13.sp)
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        SoftButton("Invia all'orologio", Modifier.fillMaxWidth()) {
+            dev.nexus.assistant.core.WatchSync.status = "Invio…"
+            scope.launch { dev.nexus.assistant.core.WatchSync.send(ctx) }
+        }
+        if (dev.nexus.assistant.core.WatchSync.status.isNotBlank())
+            Text(dev.nexus.assistant.core.WatchSync.status, color = th.inkSoft, fontSize = 12.sp)
     }
     if (adding || editing != null) ProviderDialog(editing) { adding = false; editing = null }
 }
@@ -404,4 +449,158 @@ private fun ProviderDialog(existing: Provider?, onClose: () -> Unit) {
         }
     }, confirmButton = { TextButton({ Prefs.upsert(draft(), true); onClose() }) { Text("Salva e usa") } },
         dismissButton = { TextButton(onClose) { Text("Annulla") } })
+}
+
+
+/** Modelli AI che girano sul telefono (llama.cpp): consigliati, ricerca su Hugging Face, scarica, usa, elimina. */
+@Composable
+private fun DeviceModelsSection() {
+    val th = Look.theme
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val DB = dev.nexus.assistant.core.DeviceBrain
+    val LL = dev.nexus.llama.LocalLlm
+    androidx.compose.runtime.LaunchedEffect(Unit) { DB.refresh(ctx) }
+    val ram = remember { LL.ramMb(ctx) }
+    SectionTitle("Modelli sul telefono")
+    Text("Girano sul telefono, anche senza internet. Più sono grandi, più sono intelligenti ma lenti. " +
+        "Questo telefono ha ${"%.1f".format(ram / 1024f)} GB di RAM.", color = th.inkSoft, fontSize = 13.sp)
+    if (DB.installed.isNotEmpty()) Label("Sul telefono")
+    DB.installed.forEach { f ->
+        val on = DB.inUse(f)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text((if (on) "● " else "") + DB.pretty(f), color = th.ink, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, maxLines = 1)
+                Text("${LL.fileFor(ctx, f).length() / (1024 * 1024)} MB", color = th.inkSoft, fontSize = 12.sp)
+            }
+            if (!on) SoftButton("Usa") { DB.use(f) }
+            Spacer(Modifier.width(6.dp))
+            SoftButton("Elimina") { DB.delete(ctx, f) }
+        }
+    }
+    Label("Consigliati")
+    LL.CATALOG.filter { it.file !in DB.installed }.forEach { m ->
+        val ok = LL.fits(ctx, m.sizeMb)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(m.name + " · " + m.sizeMb + " MB", color = if (ok) th.ink else th.inkSoft, fontWeight = FontWeight.SemiBold)
+                Text(if (ok) m.note else "Troppo grande per questo telefono", color = th.inkSoft, fontSize = 12.sp)
+            }
+            if (ok) SoftButton(if (DB.busy) "…" else "Scarica") {
+                if (!DB.busy) scope.launch { DB.download(ctx, m.repo, m.file) }
+            }
+        }
+    }
+    var q by remember { mutableStateOf("") }
+    Label("Cerca su Hugging Face")
+    NexusField(q, "es. qwen, gemma, llama, phi, mistral") { q = it }
+    SoftButton("Cerca", Modifier.fillMaxWidth()) { if (q.isNotBlank() && !DB.busy) scope.launch { DB.search(q) } }
+    DB.results.forEach { r ->
+        val ok = LL.fits(ctx, r.sizeMb)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(r.repo.substringAfter('/'), color = th.ink, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text("${r.file.substringAfterLast('/')} · ${r.sizeMb} MB" + if (!ok) " · troppo grande" else "",
+                    color = th.inkSoft, fontSize = 12.sp, maxLines = 1)
+            }
+            if (ok && r.file.substringAfterLast('/') !in DB.installed) SoftButton("Scarica") {
+                if (!DB.busy) scope.launch { DB.download(ctx, r.repo, r.file) }
+            }
+        }
+    }
+    if (DB.status.isNotBlank()) Text(DB.status, color = if (DB.status.startsWith("Errore")) Color(0xFFFF5A6E) else th.ink, fontSize = 13.sp)
+    if (DB.pct >= 0) androidx.compose.material3.LinearProgressIndicator(progress = { DB.pct / 100f }, modifier = Modifier.fillMaxWidth(), color = Look.led)
+    if (DB.busy && DB.pct >= 0) SoftButton("Annulla", Modifier.fillMaxWidth()) { DB.cancel() }
+}
+
+/** Chat salvate: cerca, apri (si continua a parlare da dove eri rimasto), nuova, elimina. */
+@Composable
+fun ChatsScreen(onOpen: () -> Unit) {
+    val th = Look.theme
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val C = dev.nexus.assistant.core.Chats
+    var q by remember { mutableStateOf("") }
+    var refresh by remember { mutableIntStateOf(0) }
+    val list = remember(q, refresh, dev.nexus.assistant.core.Core.chat.size) { C.list(ctx, q) }
+    Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Chat", color = th.ink, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+            PrimaryButton("+ Nuova") { dev.nexus.assistant.core.Core.newChat(); onOpen() }
+        }
+        NexusField(q, "Cerca nelle chat") { q = it }
+        if (list.isEmpty()) Text(if (q.isBlank()) "Ancora nessuna chat: parla o scrivi a NEXUS." else "Nessuna chat con “$q”",
+            color = th.inkSoft, fontSize = 14.sp, modifier = Modifier.padding(top = 20.dp))
+        androidx.compose.foundation.lazy.LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(list.size) { i ->
+                val c = list[i]
+                val on = c.id == dev.nexus.assistant.core.Core.chatId
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(if (on) chipColor() else Color.Transparent)
+                    .clickable { dev.nexus.assistant.core.Core.openChat(c.id); onOpen() }.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(c.title, color = th.ink, fontWeight = FontWeight.Bold, maxLines = 1, modifier = Modifier.weight(1f))
+                            Text(C.whenText(c.updated), color = th.inkSoft, fontSize = 11.sp)
+                        }
+                        Text(c.preview, color = th.inkSoft, fontSize = 13.sp, maxLines = 2)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text("✕", color = th.inkSoft, fontSize = 16.sp, modifier = Modifier.clip(CircleShape).clickable {
+                        C.delete(ctx, c.id)
+                        if (on) dev.nexus.assistant.core.Core.newChat()
+                        refresh++
+                    }.padding(8.dp))
+                }
+            }
+        }
+    }
+}
+
+
+/** Come si chiama l'agente e ascolto sempre attivo del suo nome ("Ehi Marco"). */
+@Composable
+private fun NameSection() {
+    val th = Look.theme
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val W = dev.nexus.assistant.core.WakeService
+    var name by remember { mutableStateOf(Prefs.agentName) }
+    var msg by remember { mutableStateOf("") }
+    val perms = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { W.start(ctx) }
+    SectionTitle("Nome")
+    Text("Dagli il nome che vuoi: si presenta così e, con l'ascolto sempre attivo, si sveglia quando lo chiami.",
+        color = th.inkSoft, fontSize = 13.sp)
+    NexusField(name, "Come si chiama (es. Marco, Jarvis, Robo)") { name = it.take(30) }
+    if (name.trim().isNotBlank() && name.trim() != Prefs.agentName)
+        SoftButton("Salva il nome", Modifier.fillMaxWidth()) {
+            Prefs.agentName = name.trim(); Prefs.save()
+            if (W.running) { W.stop(ctx); W.start(ctx) }
+        }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Ascolto sempre attivo", color = th.ink, fontWeight = FontWeight.SemiBold)
+            Text(if (W.running) "Di' “Ehi ${Prefs.agentName}” anche a schermo spento" else "Spento: si attiva col tasto o aprendo l'app",
+                color = th.inkSoft, fontSize = 12.sp)
+        }
+        androidx.compose.material3.Switch(checked = Prefs.wakeAlways, onCheckedChange = { on ->
+            Prefs.wakeAlways = on; Prefs.save()
+            if (!on) { W.stop(ctx); msg = ""; return@Switch }
+            scope.launch {
+                if (!dev.nexus.whisper.WhisperNative.ready(ctx)) {
+                    msg = "Scarico il riconoscimento vocale…"
+                    val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        runCatching { dev.nexus.whisper.WhisperNative.download(ctx) { mb, tot -> msg = "Scarico il riconoscimento vocale… $mb / $tot MB" } }
+                    }
+                    if (r.isFailure) { msg = "Errore: ${r.exceptionOrNull()?.message}"; Prefs.wakeAlways = false; Prefs.save(); return@launch }
+                }
+                msg = "Consuma un po' di batteria: Android mostra una notifica fissa finché è acceso."
+                val need = mutableListOf(android.Manifest.permission.RECORD_AUDIO)
+                if (android.os.Build.VERSION.SDK_INT >= 33) need += android.Manifest.permission.POST_NOTIFICATIONS
+                perms.launch(need.toTypedArray())
+            }
+        }, colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = Look.led))
+    }
+    if (msg.isNotBlank()) Text(msg, color = if (msg.startsWith("Errore")) Color(0xFFFF5A6E) else th.inkSoft, fontSize = 12.sp)
+    if (W.lastHeard.isNotBlank()) Text("Ultima volta ho sentito: “${W.lastHeard}”", color = th.inkSoft, fontSize = 12.sp)
 }

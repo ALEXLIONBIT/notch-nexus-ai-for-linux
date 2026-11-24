@@ -1,0 +1,38 @@
+# NEXUS: llama.cpp dentro le app Android e Wear OS (modelli GGUF che girano sul dispositivo).
+cmake_minimum_required(VERSION 3.22)
+project(nexusllama C CXX)
+set(CMAKE_CXX_STANDARD 17)
+
+include(FetchContent)
+# sorgente di llama.cpp: versione fissata (in locale si può passare -DFETCHCONTENT_SOURCE_DIR_LLAMA=...)
+FetchContent_Declare(llama URL https://github.com/ggml-org/llama.cpp/archive/refs/tags/v1.0.0.tar.gz)
+
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_APP OFF CACHE BOOL "" FORCE)
+set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
+set(LLAMA_OPENSSL OFF CACHE BOOL "" FORCE)
+set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+set(GGML_LLAMAFILE OFF CACHE BOOL "" FORCE)
+set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    # una variante della CPU per ogni generazione di ARM (dotprod, i8mm, sve…): scelta all'avvio
+    set(GGML_BACKEND_DL ON CACHE BOOL "" FORCE)
+    set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
+    set(GGML_CPU_KLEIDIAI ON CACHE BOOL "" FORCE)
+endif()
+if(ANDROID_ABI STREQUAL "armeabi-v7a")
+    # orologi (es. Galaxy Watch) con Android a 32 bit: un solo backend CPU, con NEON
+    set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
+    set(GGML_CPU_KLEIDIAI OFF CACHE BOOL "" FORCE)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfpu=neon-vfpv4 -mfloat-abi=softfp" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mfpu=neon-vfpv4 -mfloat-abi=softfp" CACHE STRING "" FORCE)
+endif()
+FetchContent_MakeAvailable(llama)
+
+add_library(nexusllama SHARED nexus_llama.cpp)
+target_link_libraries(nexusllama llama llama-common android log)

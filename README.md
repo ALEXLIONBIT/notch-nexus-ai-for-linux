@@ -1,4 +1,4 @@
-# NEXUS: Notch AI for Linux
+# NEXUS: Notch AI for Linux (e Windows, Android, Wear OS)
 
 Un assistente robot **sempre acceso** che vive dentro il tuo PC Linux. Lo svegli con la voce, ti risponde parlando e
 **agisce davvero**: apre app e siti, riordina il desktop, guarda lo schermo, usa mouse e tastiera.
@@ -59,6 +59,52 @@ e accessibilità. Su Samsung: Funzioni avanzate → Tasto laterale → Tieni pre
 
 Compilare da soli: `cd android && ./gradlew assembleDebug` (serve Android SDK, JDK 17).
 
+## Windows 10/11
+
+NEXUS gira anche su **Windows**: stesso notch, stesso casco a LED, stessa voce. Scarica `NEXUS-Setup-*.exe`
+dalle [Release](https://github.com/ALEXLIONBIT/notch-nexus-ai-for-linux/releases) (cerca "NEXUS per Windows") e aprilo:
+non servono permessi da amministratore. Al primo avvio scegli dove ragiona il robot: **su questo PC** (installa da solo
+Ollama e il modello giusto per la tua scheda video) oppure **con un provider** (il tuo PC via Tailscale, OpenAI, Claude…).
+
+| Funzione | Linux | Windows |
+|---|---|---|
+| Mouse e tastiera | uinput (evdev) | SendInput (testo in Unicode, accenti ok) |
+| Finestre | script KWin / wmctrl | API Win32 |
+| App | file `.desktop`, Flathub | menu Start + app dello Store, **winget** |
+| Terminale | bash | **PowerShell** |
+| Leggere lo schermo | Spectacle + Tesseract | screenshot + **OCR integrato in Windows** |
+| Schermo sulla TV | GNOME Network Displays | Miracast (Win+K) |
+| Aggiornamenti | git pull | scarica la nuova release e si reinstalla da solo |
+
+Log: `%LOCALAPPDATA%\NEXUS\nexus.log` · Impostazioni: `%APPDATA%\NEXUS\config.json`.
+La build è automatica (GitHub Actions su un Windows vero): `windows/build.py` crea l'app con PyInstaller, la prova
+con `NEXUS.exe --selftest` (app, finestre, mouse, OCR, PowerShell, voce, Whisper, cervello, interfaccia) e la
+impacchetta con Inno Setup. Si pubblica con un tag `windows-vX.Y.Z`.
+
+## Wear OS (orologio)
+
+In `android/wear/` c'è **NEXUS per Wear OS** (Wear OS 3+: Galaxy Watch 4 e successivi, Pixel Watch…): il robot sul
+polso, con la faccia a LED adattata allo schermo tondo. Tocca la faccia (o il microfono) e parla.
+- Va su internet da solo (Wi-Fi/LTE dell'orologio o tramite il telefono) e parla direttamente con il tuo cervello
+- **Ricerche sul web** con risposte brevi, **meteo**, timer e promemoria, sveglie, app dell'orologio,
+  battito cardiaco, volume, musica, torcia, navigatore; apre i link sul telefono
+- Cervelli, aspetto e voce arrivano **dall'app NEXUS del telefono** da soli (Cervello → "Invia all'orologio")
+- Si può mettere sul tasto dell'orologio come assistente; chat scorrevole con la corona, tastiera per scrivere
+
+Installazione: scarica `nexus-wear-*.apk` dalle Release e installalo sull'orologio con ADB
+(`adb pair` / `adb connect` dal debug wireless dell'orologio, poi `adb install nexus-wear-*.apk`).
+L'app del telefono e quella dell'orologio devono essere firmate con la stessa chiave.
+
+## Chat e modelli
+
+- **Chat salvate** (desktop, telefono, orologio): ogni conversazione resta salvata. Dal pulsante 💬 del notch (o dalla scheda
+  Chat del telefono, o da "Chat salvate" sull'orologio) le rivedi, le cerchi, le riapri e continui da dove eri rimasto.
+- **Modelli** sul PC: Personalizza → Modelli cerca nel catalogo di Ollama, scarica e cambia cervello con un clic
+  (o a voce: "installa gemma3 da 4b e usalo").
+- **Modelli sul telefono e sull'orologio**: Cervello → Modelli sul telefono / sull'orologio. Girano sul dispositivo con
+  llama.cpp, anche senza internet: consigliati da Gemma 3 270M e Qwen 2.5 0.5B (orologio) fino a Qwen 3 4B (telefono),
+  oppure qualsiasi GGUF cercato su Hugging Face.
+
 ## Provider: dove gira il cervello
 
 Non serve per forza un PC potente. Da **Personalizza → Cervello** aggiungi uno o più provider e scegli quale usare:
@@ -106,6 +152,22 @@ Le chiavi API restano solo in `config.json` sul tuo PC, che non va mai su GitHub
 > Testato su CachyOS + KDE Plasma. Il supporto per Linux Mint è nuovo: se qualcosa non va, apri una issue.
 
 ## Installazione
+
+### In un file: AppImage (il modo più semplice)
+
+Scarica `NEXUS-*-x86_64.AppImage` dalle [release](https://github.com/ALEXLIONBIT/notch-nexus-ai-for-linux/releases)
+(quelle `linux-v*`) e aprilo:
+
+```bash
+chmod +x NEXUS-*-x86_64.AppImage && ./NEXUS-*-x86_64.AppImage
+./NEXUS-*-x86_64.AppImage --permessi    # una volta sola: mouse e tastiera virtuali, poi esci e rientra
+```
+
+Al primo avvio si mette nel menu delle app e nell'avvio automatico e chiede dove gira il cervello (Ollama su questo
+PC oppure un provider). Si aggiorna da solo. Funziona su Ubuntu 22.04+, Mint, Debian, Fedora, Arch/CachyOS.
+Nell'AppImage il notch è una finestra normale: il layer-shell di KDE c'è solo con l'installazione qui sotto.
+
+### Dal codice (script)
 
 ```bash
 git clone https://github.com/ALEXLIONBIT/notch-nexus-ai-for-linux.git ~/nexus
