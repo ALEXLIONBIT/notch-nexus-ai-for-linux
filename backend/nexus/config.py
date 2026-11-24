@@ -61,7 +61,8 @@ DEFAULTS = {
 if IS_WIN:
     DEFAULTS["safe_shell_prefixes"] = ["Get-", "dir", "ls", "whoami", "hostname", "systeminfo", "ipconfig",
                                        "nvidia-smi", "pwd", "type ", "cat ", "echo "]
-    DEFAULTS["setup_done"] = False       # primo avvio: scegliere dove gira il cervello
+if IS_WIN or getattr(sys, "frozen", False):
+    DEFAULTS["setup_done"] = False       # primo avvio (Windows e AppImage): scegliere dove gira il cervello
 
 _lock = threading.Lock()
 

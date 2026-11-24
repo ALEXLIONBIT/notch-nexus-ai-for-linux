@@ -53,6 +53,7 @@ jobs:
           pgrep -f "usr/lib/nexus/NEXUS" >/dev/null || { echo "NEXUS si è chiuso da solo"; exit 1; }
           pkill -f "usr/lib/nexus/NEXUS" || true
           [ "$ok" = 1 ] || { echo "NEXUS non ha scritto 'NEXUS pronto' entro 7 minuti"; exit 1; }
+          if grep -q "Traceback" "$LOG"; then echo "errori nel log di NEXUS"; exit 1; fi
 
       - uses: actions/upload-artifact@v4
         if: always()
