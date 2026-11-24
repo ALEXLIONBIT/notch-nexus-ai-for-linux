@@ -327,6 +327,16 @@ private fun SettingsScreen(onBrain: () -> Unit, onTailscale: () -> Unit, onAssis
                     colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
             }
             item {
+                Chip(onClick = {
+                    if (!ctx.packageManager.canRequestPackageInstalls())
+                        runCatching { ctx.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                            android.net.Uri.parse("package:" + ctx.packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    scope.launch { Update.check(ctx) }
+                }, label = { Text("Aggiornamenti") },
+                    secondaryLabel = { Text(Update.status.ifBlank { "Tocca per controllare" }, maxLines = 2) },
+                    colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
+            }
+            item {
                 val v = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""
                 Text("NEXUS per Wear OS $v", color = Color.Gray, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
             }
