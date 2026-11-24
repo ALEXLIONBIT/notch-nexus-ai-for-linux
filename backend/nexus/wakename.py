@@ -1,8 +1,8 @@
 """Parola di attivazione = il nome che dai all'agente ("Ehi Marco", "Jarvis", "Nexus"…).
 
 I modelli di openWakeWord riconoscono solo poche frasi già addestrate. Per un nome qualsiasi:
-quando il VAD sente una frase breve, Whisper "tiny" la trascrive (con il nome come suggerimento,
-così lo scrive giusto) e un confronto "a orecchio" cerca il nome fra le prime parole.
+quando il VAD sente una frase breve, Whisper "tiny" la trascrive e un confronto "a orecchio"
+cerca il nome fra le prime parole.
 Whisper lavora solo quando qualcuno parla, non in continuo.
 """
 import difflib
@@ -16,7 +16,11 @@ FILLERS = {"ehi", "ei", "hey", "hei", "ehy", "ok", "okay", "ciao", "senti", "oh"
            "il", "i", "hai", "ai", "eh", "he"}          # "ehi" a volte viene trascritto così
 
 
+TAGS = re.compile(r"[\[(][^\])]*[\])]")                     # "[Musica]", "(rumore)": etichette, non parole
+
+
 def _plain(text):
+    text = TAGS.sub(" ", text)
     t = unicodedata.normalize("NFKD", text.lower())
     t = "".join(c for c in t if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9 ]+", " ", t).split()
@@ -50,7 +54,7 @@ def match(text, name):
                 continue
             got = "".join(_sound(w) for w in chunk)
             if difflib.SequenceMatcher(None, key, got).ratio() >= need:
-                orig = text.split()
+                orig = TAGS.sub(" ", text).split()
                 consumed = start + len(chunk)              # riempitivi + nome
                 return True, " ".join(orig[consumed:]).strip(" ,.!?;:")
     return False, ""
@@ -85,9 +89,12 @@ class NameSpotter:
         try:
             self.load()
             name = (self.cfg.get("agent_name") or "Nexus").strip()
+            # NIENTE suggerimento col nome: su rumore, silenzio o tosse Whisper "inventa" proprio il testo
+            # suggerito ("Ehi Marco.") e NEXUS si sveglierebbe da solo. Il confronto fonetico basta.
             segs, _ = self.model.transcribe(audio.astype(np.float32) / 32768.0, language=self.cfg.get("language", "it"),
-                                            beam_size=1, initial_prompt=f"Ehi {name}.", condition_on_previous_text=False,
+                                            beam_size=1, condition_on_previous_text=False,
                                             without_timestamps=True, vad_filter=False)
+            segs = [s for s in segs if s.no_speech_prob < 0.6]      # Whisper stesso dice che non è parlato
             text = " ".join(s.text for s in segs).strip()
             ok, rest = match(text, name)
             if ok:

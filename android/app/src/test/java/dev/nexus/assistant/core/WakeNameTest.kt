@@ -15,5 +15,7 @@ class WakeNameTest {
     @Test fun giarvis() = assertEquals(true to "metti un timer", m("Ehi Giarvis, metti un timer", "Jarvis"))
     @Test fun nomeDueParole() = assertEquals(true to "accendi la luce", m("Ehi, Robo Uno, accendi la luce", "Robo Uno"))
     @Test fun ehiTrascrittoIl() = assertEquals(true to "che ore sono", m("Il Marco, che ore sono?", "Marco"))
+    @Test fun etichetteRumore() = assertEquals(false to "", m(" [Musica]", "Marco"))
+    @Test fun etichettaPrima() = assertEquals(true to "ciao", m("(rumore) Ehi Marco, ciao", "Marco"))
     @Test fun niente() = assertEquals(false to "", m("ciao a tutti", "Ugo"))
 }

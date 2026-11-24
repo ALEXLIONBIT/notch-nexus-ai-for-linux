@@ -7,8 +7,10 @@ object WakeName {
     private val FILLERS = setOf("ehi", "ei", "hey", "hei", "ehy", "ok", "okay", "ciao", "senti", "oh", "o", "allora", "dai", "e",
         "il", "i", "hai", "ai", "eh", "he")
 
+    private val TAGS = Regex("[\\[(][^\\])]*[\\])]")       // "[Musica]", "(rumore)": etichette, non parole
+
     private fun plain(text: String): List<String> =
-        Normalizer.normalize(text.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
+        Normalizer.normalize(text.replace(TAGS, " ").lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
             .replace(Regex("[^a-z0-9 ]+"), " ").split(" ").filter { it.isNotBlank() }
 
     /** Chiave fonetica semplice: Nexus ≈ Nexsus ≈ Necsus, Jarvis ≈ Giarvis. */
@@ -49,7 +51,7 @@ object WakeName {
             val chunk = words.subList(start, minOf(words.size, start + size))
             if (chunk.isEmpty()) continue
             if (ratio(key, chunk.joinToString("") { sound(it) }) >= need) {
-                val orig = text.trim().split(Regex("\\s+"))
+                val orig = text.replace(TAGS, " ").trim().split(Regex("\\s+"))
                 return true to orig.drop(start + chunk.size).joinToString(" ").trim(' ', ',', '.', '!', '?', ';', ':')
             }
         }

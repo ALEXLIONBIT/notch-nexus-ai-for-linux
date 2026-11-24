@@ -12,8 +12,8 @@ android {
         applicationId = "dev.nexus.assistant"
         minSdk = 28
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.7.0"
+        versionCode = 10
+        versionName = "0.7.1"
     }
     // firma delle release: ~/.android/nexus-release.keystore (fuori dal repo). Stessa chiave per telefono e orologio,
     // altrimenti gli aggiornamenti non si installano e l'orologio non riceve le impostazioni dal telefono.

@@ -1,5 +1,6 @@
 """NEXUS backend: orecchie → cervello → mani → voce, e parla con la UI."""
 import json
+import os
 import re
 import subprocess
 import time
@@ -119,6 +120,8 @@ class Nexus:
             self.apply_config(msg.get("config", {}))
         elif t == "update_check":
             threading.Thread(target=self.update_check, daemon=True).start()
+        elif t == "restart":
+            threading.Thread(target=self.restart, daemon=True).start()
         elif t == "update_apply":
             threading.Thread(target=self.update_apply, daemon=True).start()
         elif t == "tailscale_status":
@@ -267,14 +270,41 @@ class Nexus:
             if APPIMAGE:
                 shutil.move(str(dest), APPIMAGE + ".new")
                 os.replace(APPIMAGE + ".new", APPIMAGE)
-            subprocess.Popen(["sh", "-c", f'sleep 2; exec "{target}"'], start_new_session=True,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(0.5)
-            os._exit(0)
+            self._relaunch(["sh", "-c", f'sleep 2; exec "{target}"'])
         subprocess.Popen(f'cmd /c timeout /t 2 /nobreak >nul & "{dest}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART',
                          creationflags=0x08000000, close_fds=True)
         time.sleep(0.5)
         os._exit(0)
+
+    def _relaunch(self, cmd):
+        """Riapre NEXUS con cmd (lanciato a parte) e chiude questo: anche l'interfaccia, se è un processo figlio
+        (AppImage con il Qt di sistema), altrimenti resterebbe aperta una seconda interfaccia."""
+        import signal
+        subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.5)
+        if not IS_WIN:
+            try:
+                os.killpg(os.getpgrp(), signal.SIGTERM)
+            except OSError:
+                pass
+        os._exit(0)
+
+    def restart(self):
+        """Personalizza → Aggiornamenti → Riavvia: chiude e riapre tutto NEXUS."""
+        import sys
+        self.bus.emit("update_status", current="", behind=0, news=[], error="", restarting=True)
+        time.sleep(0.3)
+        if IS_WIN and FROZEN:
+            subprocess.Popen(f'cmd /c timeout /t 2 /nobreak >nul & start "" "{sys.executable}"',
+                             creationflags=0x08000000, close_fds=True)
+            time.sleep(0.5)
+            os._exit(0)
+        if APPIMAGE:
+            self._relaunch(["sh", "-c", f'sleep 2; exec "{APPIMAGE}"'])
+        from .config import ROOT
+        subprocess.Popen(["sh", "-c", "sleep 1; systemctl --user --no-block restart nexus-backend nexus-ui || "
+                          f"(pkill -f 'nexus.main'; pkill -f 'ui/app.py'; setsid {ROOT}/scripts/nexus >/dev/null 2>&1 &)"],
+                         start_new_session=True)
 
     def _git(self, *args, timeout=60):
         from .config import ROOT
@@ -309,7 +339,7 @@ class Nexus:
                             str(ROOT / "backend/requirements.txt")], capture_output=True, timeout=1200)
         self.bus.emit("update_status", current="", behind=0, news=[], error="", restarting=True)
         # riavvio: systemd se c'è, altrimenti rilancia lo script
-        subprocess.Popen(["sh", "-c", "sleep 1; systemctl --user restart nexus-backend nexus-ui || "
+        subprocess.Popen(["sh", "-c", "sleep 1; systemctl --user --no-block restart nexus-backend nexus-ui || "
                           f"(pkill -f 'nexus.main'; pkill -f 'ui/app.py'; setsid {ROOT}/scripts/nexus >/dev/null 2>&1 &)"],
                          start_new_session=True)
 
@@ -462,13 +492,21 @@ class Nexus:
             p.update({k: v for k, v in draft.items() if v not in ("", None) and k != "api_key_hint"})
             p.setdefault("kind", PRESETS.get(p.get("preset"), {}).get("kind", "openai"))
             try:
-                models = make(p, cfg).list_models()
+                # alcuni servizi (Gemini) li chiamano "models/gemini-2.5-flash": per chiederli basta il nome
+                models = sorted({m.removeprefix("models/") for m in make(p, cfg).list_models()})
                 if t == "provider_models":
-                    self.bus.emit("provider_models", id=msg.get("id"), models=models[:300])
+                    self.bus.emit("provider_models", id=msg.get("id"), models=models[:500])
                 else:
-                    ok_model = not p.get("model") or p["model"] in models or not models
-                    self.bus.emit("provider_result", ok=True, text=f"Connesso: {len(models)} modelli disponibili"
-                                  + ("" if ok_model else f" (attenzione: '{p['model']}' non è nella lista)"))
+                    want = (p.get("model") or "").removeprefix("models/")
+                    if not want or want in models or not models:
+                        self.bus.emit("provider_result", ok=True, text=f"Connesso: {len(models)} modelli disponibili"
+                                      + (f", “{want}” c'è" if want else ""))
+                    else:
+                        import difflib
+                        near = difflib.get_close_matches(want, models, n=1, cutoff=0.3)
+                        self.bus.emit("provider_models", id=msg.get("id"), models=models[:500])
+                        self.bus.emit("provider_result", ok=False, text=f"Connesso, ma il modello “{want}” non c'è con questa chiave: "
+                                      + (f"forse “{near[0]}”? " if near else "") + "scegline uno dall'elenco qui sopra.")
             except Exception as e:
                 self.bus.emit("provider_result", ok=False, text=f"Connessione fallita: {str(e)[:160]}")
 
