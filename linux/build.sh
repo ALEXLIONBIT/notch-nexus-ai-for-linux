@@ -13,7 +13,7 @@ mkdir -p build dist
 if [[ " $* " != *" --no-deps "* ]]; then
     "$PY" -m pip install --upgrade pip wheel
     "$PY" -m pip install -r "$ROOT/backend/requirements.txt" PySide6-Essentials pyinstaller
-    "$PY" -c "import openwakeword; openwakeword.utils.download_models()"
+    "$PY" -c "from openwakeword.utils import download_models; download_models()"
 fi
 
 # voce italiana inclusa

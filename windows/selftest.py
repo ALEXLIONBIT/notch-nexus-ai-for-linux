@@ -240,10 +240,10 @@ def main():
     @check("wake_word")
     def _():
         import numpy as np
-        import openwakeword
         from openwakeword.model import Model
+        from openwakeword.utils import download_models
         try:
-            openwakeword.utils.download_models(["hey_jarvis"])
+            download_models(["hey_jarvis"])
         except Exception:
             pass
         m = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")

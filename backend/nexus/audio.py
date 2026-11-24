@@ -27,10 +27,10 @@ class Ears:
     # ---------- wake word ----------
     def load_wakeword(self):
         try:
-            import openwakeword
             from openwakeword.model import Model
+            from openwakeword.utils import download_models
             try:
-                openwakeword.utils.download_models([self.cfg["wake_word"]])
+                download_models([self.cfg["wake_word"]])
             except Exception:
                 pass
             self.oww = Model(wakeword_models=[self.cfg["wake_word"]], inference_framework="onnx")
