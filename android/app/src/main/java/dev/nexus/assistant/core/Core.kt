@@ -70,6 +70,48 @@ object Core {
     private var job: Job? = null
     private var history = mutableListOf<Msg>()
     private var lastTurn = 0L
+
+    // ------------------------------------------------------------ chat salvate
+    var chatId by mutableStateOf("")
+    var chatTitle by mutableStateOf("")
+    private var chatCreated = 0L
+
+    /** Prima di ogni domanda: dopo 5 minuti di pausa comincia una chat nuova (la vecchia resta salvata). */
+    private fun beginTurn() {
+        val now = System.currentTimeMillis()
+        if (chatId.isEmpty() || now - lastTurn > 5 * 60_000) {
+            chatId = Chats.newId(); chatTitle = ""; chatCreated = now
+            chat.clear(); history.clear(); lastTurn = now
+        }
+    }
+
+    private fun persist() {
+        val c = SavedChat(chatId, chatTitle, chatCreated, chat.toList(), history.toList())
+        scope.launch(Dispatchers.IO) { runCatching { Chats.save(app, c) } }
+    }
+
+    /** Riapre una chat salvata: si vede la conversazione e il cervello ricorda il discorso. */
+    fun openChat(id: String) {
+        val c = Chats.load(app, id) ?: return
+        job?.cancel()
+        chatId = c.id; chatTitle = c.title; chatCreated = c.created
+        chat.clear(); chat.addAll(c.lines)
+        history = c.history.toMutableList()
+        lastTurn = System.currentTimeMillis()
+        transcript = ""; reply = ""
+    }
+
+    /** Se il cervello è un modello sul dispositivo, lo prepara in background. */
+    fun warmup() {
+        val p = Prefs.active() ?: return
+        if (p.kind != "device") return
+        scope.launch { Llm.warmup(p, systemPrompt(), Tools(app, onStep = {}, hideUi = {}, onImage = {}, confirm = { false }).schemas) }
+    }
+
+    fun newChat() {
+        job?.cancel()
+        chatId = ""; chatTitle = ""; chat.clear(); history.clear(); transcript = ""; reply = ""
+    }
     @Volatile private var cancelled = false
 
     fun init(ctx: Context) {
@@ -201,7 +243,9 @@ Non dire mai di aver fatto qualcosa se non hai chiamato il tool. Data e ora: $no
 
     fun ask(text: String) {
         job?.cancel(); cancelled = false
-        quickCommand(text)?.let { r -> chat.add(ChatLine(true, text)); chat.add(ChatLine(false, r)); reply = r; transcript = text; speak(r); return }
+        beginTurn()
+        if (chatTitle.isBlank()) chatTitle = Chats.title(text)
+        quickCommand(text)?.let { r -> chat.add(ChatLine(true, text)); chat.add(ChatLine(false, r)); reply = r; transcript = text; persist(); speak(r); return }
         transcript = text; reply = ""; steps.clear(); happy = false; lastImage = null
         chat.add(ChatLine(true, text))
         state = "thinking"; detail = "Ci penso"
@@ -210,6 +254,7 @@ Non dire mai di aver fatto qualcosa se non hai chiamato il tool. Data e ora: $no
                     catch (e: Exception) { state = "error"; "Non riesco a parlare con il cervello: ${e.message?.take(120)}" }
             reply = r
             chat.add(ChatLine(false, r, lastImage))
+            persist()
             happy = state != "error"
             scope.launch { delay(2500); happy = false }
             speak(r)
@@ -230,7 +275,6 @@ Non dire mai di aver fatto qualcosa se non hai chiamato il tool. Data e ora: $no
 
     private suspend fun runAgent(text: String): String {
         var p = Prefs.active() ?: return "Prima aggiungi un cervello: apri NEXUS, scheda Cervello."
-        if (System.currentTimeMillis() - lastTurn > 5 * 60_000) history.clear()
         lastTurn = System.currentTimeMillis()
         val tools = Tools(app, onStep = { s -> scope.launch { steps.add(s); state = "acting"; detail = s } },
             hideUi = { scope.launch { hideRequest++ } }, onImage = { path -> lastImage = path }, confirm = { q -> confirm(q) })

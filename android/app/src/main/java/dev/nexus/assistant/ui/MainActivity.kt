@@ -36,6 +36,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -99,7 +100,7 @@ class MainActivity : ComponentActivity() {
                 mic.launch(Manifest.permission.RECORD_AUDIO)
             dev.nexus.assistant.core.Updater.check(this@MainActivity)
         }
-        val tabs = listOf<Pair<String, ImageVector>>("NEXUS" to Icons.Filled.SmartToy, "Aspetto" to Icons.Filled.Palette,
+        val tabs = listOf<Pair<String, ImageVector>>("NEXUS" to Icons.Filled.SmartToy, "Chat" to Icons.Filled.Forum, "Aspetto" to Icons.Filled.Palette,
             "Cervello" to Icons.Filled.Memory, "Configura" to Icons.Filled.Tune)
         BoxWithConstraints(Modifier.fillMaxSize().background(Look.bg)) {
             val tablet = maxWidth > 600.dp
@@ -107,8 +108,9 @@ class MainActivity : ComponentActivity() {
                 Box(m) {
                     when (tab) {
                         0 -> HomeScreen(tablet)
-                        1 -> LookScreen(tablet)
-                        2 -> BrainScreen()
+                        1 -> ChatsScreen(onOpen = { tab = 0 })
+                        2 -> LookScreen(tablet)
+                        3 -> BrainScreen()
                         else -> SetupScreen()
                     }
                 }
@@ -154,7 +156,16 @@ class MainActivity : ComponentActivity() {
                         fontWeight = FontWeight.Bold, textAlign = TextAlign.Center), Modifier.padding(horizontal = 16.dp))
             }
         }
-        val chat: @Composable (Modifier) -> Unit = { m ->
+        val chat: @Composable (Modifier) -> Unit = { m0 ->
+          Column(m0) {
+            if (Core.chat.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(Core.chatTitle.ifBlank { "Chat" }, color = th.inkSoft, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, modifier = Modifier.weight(1f))
+                Text("+ Nuova chat", color = th.ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(chipColor()).clickable { Core.newChat() }
+                        .padding(horizontal = 12.dp, vertical = 6.dp))
+            }
+            val m = Modifier.weight(1f)
             val st = rememberLazyListState()
             LaunchedEffect(Core.chat.size) { if (Core.chat.isNotEmpty()) st.animateScrollToItem(Core.chat.size - 1) }
             LazyColumn(m, state = st, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -167,6 +178,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+          }
         }
         if (tablet) {
             Row(Modifier.fillMaxSize().padding(24.dp).imePadding(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {

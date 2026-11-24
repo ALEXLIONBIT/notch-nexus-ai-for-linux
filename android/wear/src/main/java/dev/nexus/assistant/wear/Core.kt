@@ -56,6 +56,48 @@ object Core {
     private var job: Job? = null
     private var history = mutableListOf<Msg>()
     private var lastTurn = 0L
+
+    // ------------------------------------------------------------ chat salvate
+    var chatId by mutableStateOf("")
+    var chatTitle by mutableStateOf("")
+    private var chatCreated = 0L
+
+    /** Prima di ogni domanda: dopo 5 minuti di pausa comincia una chat nuova (la vecchia resta salvata). */
+    private fun beginTurn() {
+        val now = System.currentTimeMillis()
+        if (chatId.isEmpty() || now - lastTurn > 5 * 60_000) {
+            chatId = Chats.newId(); chatTitle = ""; chatCreated = now
+            chat.clear(); history.clear(); lastTurn = now
+        }
+    }
+
+    private fun persist() {
+        val c = SavedChat(chatId, chatTitle, chatCreated, chat.toList(), history.toList())
+        scope.launch(Dispatchers.IO) { runCatching { Chats.save(app, c) } }
+    }
+
+    /** Riapre una chat salvata: si vede la conversazione e il cervello ricorda il discorso. */
+    fun openChat(id: String) {
+        val c = Chats.load(app, id) ?: return
+        job?.cancel()
+        chatId = c.id; chatTitle = c.title; chatCreated = c.created
+        chat.clear(); chat.addAll(c.lines)
+        history = c.history.toMutableList()
+        lastTurn = System.currentTimeMillis()
+        transcript = ""; reply = ""
+    }
+
+    /** Se il cervello è un modello sul dispositivo, lo prepara in background. */
+    fun warmup() {
+        val p = Prefs.active() ?: return
+        if (p.kind != "device") return
+        scope.launch { Llm.warmup(p, systemPrompt(), Tools(app, onStep = {}, confirm = { false }, onTorch = {}).schemas) }
+    }
+
+    fun newChat() {
+        job?.cancel()
+        chatId = ""; chatTitle = ""; chat.clear(); history.clear(); transcript = ""; reply = ""
+    }
     @Volatile private var cancelled = false
 
     fun init(ctx: Context) {
@@ -197,16 +239,18 @@ NON chiudere con domande di cortesia. Data e ora: $now."""
 
     fun ask(text: String) {
         job?.cancel(); cancelled = false
+        beginTurn()
+        if (chatTitle.isBlank()) chatTitle = Chats.title(text)
         transcript = text; reply = ""; happy = false
         chat.add(ChatLine(true, text))
-        quickCommand(text)?.let { r -> chat.add(ChatLine(false, r)); reply = r; speak(r); return }
+        quickCommand(text)?.let { r -> chat.add(ChatLine(false, r)); reply = r; persist(); speak(r); return }
         state = "thinking"; detail = "Ci penso"
         job = scope.launch {
             val r = try { runAgent(text) } catch (e: kotlinx.coroutines.CancellationException) { return@launch }
                     catch (e: Exception) { state = "error"; "Non riesco a parlare con il cervello: ${e.message?.take(100)}" }
             reply = r
             chat.add(ChatLine(false, r))
-            while (chat.size > 40) chat.removeAt(0)
+            persist()
             happy = state != "error"
             scope.launch { delay(2500); happy = false }
             speak(r)
@@ -227,7 +271,6 @@ NON chiudere con domande di cortesia. Data e ora: $now."""
 
     private suspend fun runAgent(text: String): String {
         var p = Prefs.active() ?: return "Prima mi serve un cervello: aprimi sul telefono oppure vai nelle impostazioni."
-        if (System.currentTimeMillis() - lastTurn > 5 * 60_000) history.clear()
         lastTurn = System.currentTimeMillis()
         val tools = Tools(app, onStep = { s -> scope.launch { state = "acting"; detail = s } }, confirm = { q -> confirm(q) },
             onTorch = { on -> torch = on })

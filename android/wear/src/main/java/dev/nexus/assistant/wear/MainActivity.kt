@@ -162,11 +162,13 @@ private fun App() {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             SwipeDismissableNavHost(nav, startDestination = "home") {
                 composable("home") { Home(onChat = { nav.navigate("chat") }, onSettings = { nav.navigate("settings") }) }
-                composable("chat") { ChatScreen() }
+                composable("chat") { ChatScreen(onList = { nav.navigate("chats") }) }
+                composable("chats") { ChatsListScreen(onOpen = { nav.popBackStack() }) }
                 composable("settings") { SettingsScreen(onBrain = { nav.navigate("brain") }, onTailscale = { nav.navigate("tailscale") }, onAssist = { nav.navigate("assist") }) }
                 composable("assist") { AssistScreen() }
                 composable("tailscale") { TailscaleScreen() }
-                composable("brain") { BrainScreen(onManual = { nav.navigate("manual") }) }
+                composable("brain") { BrainScreen(onManual = { nav.navigate("manual") }, onDevice = { nav.navigate("device") }) }
+                composable("device") { DeviceModelsScreen() }
                 composable("manual") { ManualScreen(onDone = { nav.popBackStack() }) }
             }
             if (Core.confirmText.isNotEmpty()) ConfirmOverlay()
@@ -253,13 +255,13 @@ private fun rememberTextInput(label: String, onText: (String) -> Unit): () -> Un
 
 // ====================================================================== CHAT
 @Composable
-private fun ChatScreen() {
+private fun ChatScreen(onList: () -> Unit) {
     val st = rememberScalingLazyListState(initialCenterItemIndex = 0)
     val type = rememberTextInput("Scrivi a NEXUS") { Core.ask(it) }
     LaunchedEffect(Core.chat.size) { if (Core.chat.isNotEmpty()) st.animateScrollToItem(Core.chat.size) }
     Scaffold(timeText = { TimeText() }, positionIndicator = { PositionIndicator(st) }) {
         ScalingLazyColumn(state = st, modifier = Modifier.fillMaxSize()) {
-            item { ListHeader { Text("Conversazione") } }
+            item { ListHeader { Text(Core.chatTitle.ifBlank { "Conversazione" }, maxLines = 2, textAlign = TextAlign.Center) } }
             if (Core.chat.isEmpty()) item { Text("Ancora niente. Tocca il microfono e chiedimi qualcosa.", color = Color.Gray, fontSize = 12.sp, textAlign = TextAlign.Center) }
             items(Core.chat) { m ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = if (m.fromUser) Alignment.CenterEnd else Alignment.CenterStart) {
@@ -269,7 +271,58 @@ private fun ChatScreen() {
                 }
             }
             item {
+                Chip(onClick = { Core.listen() }, label = { Text("Parla") }, icon = { Icon(Icons.Filled.Mic, "Parla") },
+                    colors = ChipDefaults.primaryChipColors(backgroundColor = Look.led, contentColor = Color.Black), modifier = Modifier.fillMaxWidth())
+            }
+            item {
                 Chip(onClick = type, label = { Text("Scrivi") }, colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
+            }
+            item {
+                Chip(onClick = onList, label = { Text("Chat salvate") }, secondaryLabel = { Text("Rivedi, cerca, nuova") },
+                    colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
+            }
+        }
+    }
+}
+
+// ====================================================================== CHAT SALVATE
+@Composable
+private fun ChatsListScreen(onOpen: () -> Unit) {
+    val ctx = LocalContext.current
+    var q by remember { mutableStateOf("") }
+    var refresh by remember { mutableStateOf(0) }
+    var deleting by remember { mutableStateOf(false) }
+    val list = remember(q, refresh) { Chats.list(ctx, q) }
+    val search = rememberTextInput("Cerca nelle chat") { q = it.trim() }
+    val st = rememberScalingLazyListState()
+    Scaffold(timeText = { TimeText() }, positionIndicator = { PositionIndicator(st) }) {
+        ScalingLazyColumn(state = st, modifier = Modifier.fillMaxSize()) {
+            item { ListHeader { Text("Chat salvate") } }
+            item {
+                Chip(onClick = { Core.newChat(); onOpen() }, label = { Text("Nuova chat") },
+                    colors = ChipDefaults.primaryChipColors(backgroundColor = Look.led, contentColor = Color.Black), modifier = Modifier.fillMaxWidth())
+            }
+            item {
+                Chip(onClick = { if (q.isBlank()) search() else q = "" }, label = { Text(if (q.isBlank()) "Cerca" else "Cerca: $q") },
+                    secondaryLabel = { if (q.isNotBlank()) Text("Tocca per vedere tutte") },
+                    colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
+            }
+            if (list.isEmpty()) item {
+                Text(if (q.isBlank()) "Ancora nessuna chat." else "Niente con “$q”", color = Color.Gray, fontSize = 12.sp, textAlign = TextAlign.Center)
+            }
+            items(list) { c ->
+                Chip(onClick = {
+                        if (deleting) { Chats.delete(ctx, c.id); if (c.id == Core.chatId) Core.newChat(); refresh++ }
+                        else { Core.openChat(c.id); onOpen() }
+                    },
+                    label = { Text(c.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    secondaryLabel = { Text(if (deleting) "Tocca per eliminare" else Chats.whenText(c.updated) + " · " + c.preview, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    colors = if (deleting) ChipDefaults.chipColors(backgroundColor = Color(0xFF5A1E27)) else ChipDefaults.secondaryChipColors(),
+                    modifier = Modifier.fillMaxWidth())
+            }
+            if (list.isNotEmpty()) item {
+                Chip(onClick = { deleting = !deleting }, label = { Text(if (deleting) "Fatto" else "Elimina chat") },
+                    colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
             }
         }
     }
@@ -434,7 +487,7 @@ private fun TailscaleScreen() {
 
 // ====================================================================== CERVELLO
 @Composable
-private fun BrainScreen(onManual: () -> Unit) {
+private fun BrainScreen(onManual: () -> Unit, onDevice: () -> Unit) {
     val st = rememberScalingLazyListState()
     Scaffold(timeText = { TimeText() }, positionIndicator = { PositionIndicator(st) }) {
         ScalingLazyColumn(state = st, modifier = Modifier.fillMaxSize()) {
@@ -451,7 +504,63 @@ private fun BrainScreen(onManual: () -> Unit) {
                 Text("Nessun cervello. Il modo più comodo: apri NEXUS sul telefono, li manda da solo.", color = Color.Gray,
                     fontSize = 12.sp, textAlign = TextAlign.Center)
             }
+            item {
+                Chip(onClick = onDevice, label = { Text("Modelli sull'orologio") },
+                    secondaryLabel = { Text("Girano qui, anche senza internet") },
+                    colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
+            }
             item { Chip(onClick = onManual, label = { Text("Aggiungi a mano") }, colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth()) }
+        }
+    }
+}
+
+// ====================================================================== MODELLI SULL'OROLOGIO
+@Composable
+private fun DeviceModelsScreen() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val LL = dev.nexus.llama.LocalLlm
+    val st = rememberScalingLazyListState()
+    LaunchedEffect(Unit) { DeviceBrain.refresh(ctx) }
+    val search = rememberTextInput("Cerca un modello") { q -> scope.launch { DeviceBrain.search(q) } }
+    Scaffold(timeText = { TimeText() }, positionIndicator = { PositionIndicator(st) }) {
+        ScalingLazyColumn(state = st, modifier = Modifier.fillMaxSize()) {
+            item { ListHeader { Text("Sull'orologio") } }
+            item {
+                Text("RAM ${"%.1f".format(LL.ramMb(ctx) / 1024f)} GB. I modelli piccoli rispondono in pochi secondi e consumano batteria.",
+                    color = Color.Gray, fontSize = 11.sp, textAlign = TextAlign.Center)
+            }
+            if (DeviceBrain.status.isNotBlank()) item {
+                Text(DeviceBrain.status, color = if (DeviceBrain.status.startsWith("Errore")) Color(0xFFFF5A6E) else Look.led,
+                    fontSize = 12.sp, textAlign = TextAlign.Center, maxLines = 3)
+            }
+            if (DeviceBrain.busy && DeviceBrain.pct >= 0) item {
+                Chip(onClick = { DeviceBrain.cancel() }, label = { Text("Annulla") }, colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
+            }
+            items(DeviceBrain.installed) { f ->
+                val on = DeviceBrain.inUse(f)
+                Chip(onClick = { if (on) DeviceBrain.delete(ctx, f) else DeviceBrain.use(f) },
+                    label = { Text(DeviceBrain.pretty(f), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    secondaryLabel = { Text(if (on) "In uso · tocca per eliminare" else "Tocca per usarlo") },
+                    colors = if (on) ChipDefaults.primaryChipColors(backgroundColor = Look.led, contentColor = Color.Black) else ChipDefaults.secondaryChipColors(),
+                    modifier = Modifier.fillMaxWidth())
+            }
+            item { ListHeader { Text("Consigliati") } }
+            items(LL.CATALOG.filter { it.watch && it.file !in DeviceBrain.installed }) { m ->
+                val ok = LL.fits(ctx, m.sizeMb)
+                Chip(onClick = { if (ok && !DeviceBrain.busy) scope.launch { DeviceBrain.download(ctx, m.repo, m.file) } },
+                    label = { Text("${m.name} · ${m.sizeMb} MB", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    secondaryLabel = { Text(if (ok) m.note else "Troppo grande per questo orologio", maxLines = 2) },
+                    enabled = ok, colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
+            }
+            item { Chip(onClick = { search() }, label = { Text("Cerca su Hugging Face") }, colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth()) }
+            items(DeviceBrain.results) { r ->
+                val ok = LL.fits(ctx, r.sizeMb)
+                Chip(onClick = { if (ok && !DeviceBrain.busy) scope.launch { DeviceBrain.download(ctx, r.repo, r.file) } },
+                    label = { Text(r.repo.substringAfter('/'), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    secondaryLabel = { Text("${r.sizeMb} MB" + if (!ok) " · troppo grande" else "") },
+                    enabled = ok, colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
+            }
         }
     }
 }

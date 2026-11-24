@@ -7,13 +7,14 @@ plugins {
 android {
     namespace = "dev.nexus.assistant.wear"
     compileSdk = 35
+    ndkVersion = "29.0.14206865"   // serve per togliere i simboli di debug dalle librerie native
     defaultConfig {
         // stesso applicationId e stessa firma dell'app del telefono: serve per ricevere le impostazioni (Data Layer)
         applicationId = "dev.nexus.assistant"
         minSdk = 30            // Wear OS 3 e successivi (Galaxy Watch 4+, Pixel Watch, …)
         targetSdk = 34
-        versionCode = 100004
-        versionName = "0.1.3"
+        versionCode = 100005
+        versionName = "0.2.0"
     }
     // firma delle release: ~/.android/nexus-release.keystore (fuori dal repo). Stessa chiave per telefono e orologio,
     // altrimenti gli aggiornamenti non si installano e l'orologio non riceve le impostazioni dal telefono.
@@ -64,6 +65,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation(project(":llama"))
     if (rootProject.file("libs/tsbridge.aar").exists()) implementation(files(rootProject.file("libs/tsbridge.aar")))
     implementation("com.google.zxing:core:3.5.3")
 }

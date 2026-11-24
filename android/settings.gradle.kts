@@ -8,3 +8,4 @@ dependencyResolutionManagement {
 rootProject.name = "NexusAndroid"
 include(":app")
 include(":wear")
+include(":llama")
