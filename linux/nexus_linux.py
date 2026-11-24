@@ -23,6 +23,28 @@ UDEV = ('echo \'KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_n
         'modprobe uinput; udevadm control --reload-rules; udevadm trigger /dev/uinput; usermod -aG input "$1"')
 
 
+CERTS = ("/etc/ssl/certs/ca-certificates.crt",            # Debian/Ubuntu/Mint, Arch
+         "/etc/pki/tls/certs/ca-bundle.crt",              # Fedora/RHEL
+         "/etc/ssl/ca-bundle.pem",                        # openSUSE
+         "/etc/ssl/cert.pem")
+
+
+def _certs():
+    """Il Python incluso cerca i certificati HTTPS dove li mette Ubuntu: sulle altre distro HTTPS fallirebbe.
+    Si usano quelli del sistema, altrimenti quelli di certifi inclusi nell'app."""
+    if os.environ.get("SSL_CERT_FILE"):
+        return
+    for c in CERTS:
+        if os.path.exists(c):
+            os.environ["SSL_CERT_FILE"] = c
+            return
+    try:
+        import certifi
+        os.environ["SSL_CERT_FILE"] = certifi.where()
+    except ImportError:
+        pass
+
+
 def _clean_children():
     """I programmi aperti da NEXUS (browser, Dolphin, terminale…) non devono ereditare le librerie
     e i percorsi Qt/Python dell'AppImage, altrimenti si chiudono o si aprono male."""
@@ -30,7 +52,7 @@ def _clean_children():
         return
     env = dict(os.environ)
     for k in ("LD_LIBRARY_PATH", "QT_PLUGIN_PATH", "QML2_IMPORT_PATH", "QML_IMPORT_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH",
-              "PYTHONHOME", "PYTHONPATH", "SSL_CERT_FILE", "GST_PLUGIN_SYSTEM_PATH", "GIO_MODULE_DIR",
+              "PYTHONHOME", "PYTHONPATH", "GST_PLUGIN_SYSTEM_PATH", "GIO_MODULE_DIR",
               "QT_WAYLAND_SHELL_INTEGRATION", "NEXUS_UI_DIR", "QT_QUICK_CONTROLS_STYLE", "APPDIR", "APPIMAGE", "OWD", "ARGV0"):
         orig = env.pop(k + "_ORIG", None)
         env.pop(k, None)
@@ -116,6 +138,8 @@ def _permessi():
 
 
 def main():
+    if getattr(sys, "frozen", False):
+        _certs()
     if "--selftest-ui" in sys.argv:
         import selftest
         selftest.ui_main()

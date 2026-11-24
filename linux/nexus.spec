@@ -20,7 +20,7 @@ datas += collect_data_files("onnxruntime")
 
 hidden = ["nexus.tools." + t for t in TOOLS] + ["nexus.winsetup", "nexus.gateway", "nexus.tailnet", "selftest", "app"]
 hidden += collect_submodules("openwakeword") + collect_submodules("piper") + collect_submodules("evdev")
-hidden += ["sounddevice", "_sounddevice_data"]
+hidden += ["sounddevice", "_sounddevice_data", "certifi"]
 
 # PortAudio non è dentro la ruota di sounddevice su Linux: lo includiamo (build.sh lo installa)
 binaries = collect_dynamic_libs("ctranslate2") + collect_dynamic_libs("onnxruntime")

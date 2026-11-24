@@ -1,3 +1,5 @@
+**Novità 0.2.1**: ricerche web e aggiornamenti funzionano su tutte le distro (prima su Arch/CachyOS e Fedora HTTPS non trovava i certificati).
+
 **NEXUS per Linux in un solo file (AppImage)**: lo stesso robot dell'installazione classica, senza script né Python da installare.
 
 **Come si usa:** scarica `NEXUS-*-x86_64.AppImage`, rendilo eseguibile e aprilo:
