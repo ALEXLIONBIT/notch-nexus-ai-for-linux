@@ -48,6 +48,30 @@
             </intent-filter>
         </activity>
 
+        <!-- assistente digitale dell'orologio (al posto di Gemini) -->
+        <service
+            android:name=".NexusVoiceService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <meta-data android:name="android.voice_interaction" android:resource="@xml/assist_service" />
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".NexusSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+        <service
+            android:name=".NexusRecognitionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <meta-data android:name="android.speech" android:resource="@xml/recognition_service" />
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+            </intent-filter>
+        </service>
+
         <!-- impostazioni mandate dall'app NEXUS del telefono -->
         <service android:name=".SyncService" android:exported="true">
             <intent-filter>

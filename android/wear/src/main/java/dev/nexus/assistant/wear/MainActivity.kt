@@ -75,6 +75,7 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.input.RemoteInputIntentHelper
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -162,7 +163,8 @@ private fun App() {
             SwipeDismissableNavHost(nav, startDestination = "home") {
                 composable("home") { Home(onChat = { nav.navigate("chat") }, onSettings = { nav.navigate("settings") }) }
                 composable("chat") { ChatScreen() }
-                composable("settings") { SettingsScreen(onBrain = { nav.navigate("brain") }, onTailscale = { nav.navigate("tailscale") }) }
+                composable("settings") { SettingsScreen(onBrain = { nav.navigate("brain") }, onTailscale = { nav.navigate("tailscale") }, onAssist = { nav.navigate("assist") }) }
+                composable("assist") { AssistScreen() }
                 composable("tailscale") { TailscaleScreen() }
                 composable("brain") { BrainScreen(onManual = { nav.navigate("manual") }) }
                 composable("manual") { ManualScreen(onDone = { nav.popBackStack() }) }
@@ -275,7 +277,7 @@ private fun ChatScreen() {
 
 // ====================================================================== IMPOSTAZIONI
 @Composable
-private fun SettingsScreen(onBrain: () -> Unit, onTailscale: () -> Unit) {
+private fun SettingsScreen(onBrain: () -> Unit, onTailscale: () -> Unit, onAssist: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val st = rememberScalingLazyListState()
@@ -298,6 +300,14 @@ private fun SettingsScreen(onBrain: () -> Unit, onTailscale: () -> Unit) {
             item {
                 Chip(onClick = onTailscale, label = { Text("Tailscale") }, secondaryLabel = { Text(Ts.label, maxLines = 2) },
                     colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
+            }
+            item {
+                var def by remember { mutableStateOf(Assist.isDefault(ctx)) }
+                LaunchedEffect(Unit) { while (true) { def = Assist.isDefault(ctx); delay(1500) } }
+                Chip(onClick = onAssist, label = { Text("Al posto di Gemini") },
+                    secondaryLabel = { Text(if (def) "NEXUS è l'assistente ✓" else "Tocca per mettere NEXUS", maxLines = 2) },
+                    colors = if (def) ChipDefaults.secondaryChipColors() else ChipDefaults.primaryChipColors(backgroundColor = Look.led, contentColor = Color.Black),
+                    modifier = Modifier.fillMaxWidth())
             }
             item { Toggle("Leggi a voce", Prefs.speak) { Prefs.speak = it; Prefs.save() } }
             item { Toggle("Ascolta all'apertura", Prefs.listenOnOpen) { Prefs.listenOnOpen = it; Prefs.save() } }
@@ -329,6 +339,44 @@ private fun Toggle(label: String, on: Boolean, onChange: (Boolean) -> Unit) =
     ToggleChip(checked = on, onCheckedChange = onChange, label = { Text(label) },
         toggleControl = { Icon(ToggleChipDefaults.switchIcon(on), if (on) "Acceso" else "Spento") },
         modifier = Modifier.fillMaxWidth())
+
+// ====================================================================== ASSISTENTE
+@Composable
+private fun AssistScreen() {
+    val ctx = LocalContext.current
+    val st = rememberScalingLazyListState()
+    var def by remember { mutableStateOf(Assist.isDefault(ctx)) }
+    LaunchedEffect(Unit) { while (true) { def = Assist.isDefault(ctx); delay(1000) } }
+    val role = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        def = Assist.isDefault(ctx)
+        if (!def) Assist.openSettings(ctx)
+    }
+    Scaffold(timeText = { TimeText() }, positionIndicator = { PositionIndicator(st) }) {
+        ScalingLazyColumn(state = st, modifier = Modifier.fillMaxSize()) {
+            item { ListHeader { Text("Al posto di Gemini") } }
+            item {
+                Text(if (def) "NEXUS è l'assistente dell'orologio ✓"
+                     else "Rendi NEXUS l'assistente dell'orologio: si apre e ti ascolta quando tieni premuto il tasto.",
+                    color = if (def) Look.led else Color.White, fontSize = 13.sp, textAlign = TextAlign.Center)
+            }
+            if (!def) item {
+                Chip(onClick = {
+                    val i = Assist.requestIntent(ctx)
+                    if (i != null) runCatching { role.launch(i) }.onFailure { Assist.openSettings(ctx) } else Assist.openSettings(ctx)
+                }, label = { Text("Metti NEXUS") }, secondaryLabel = { Text("Scegli NEXUS come assistente") },
+                    colors = ChipDefaults.primaryChipColors(backgroundColor = Look.led, contentColor = Color.Black), modifier = Modifier.fillMaxWidth())
+            }
+            item {
+                Text("Sul tasto: Impostazioni → Funzioni avanzate → Personalizza tasti → Tieni premuto → Assistente vocale.",
+                    color = Color.Gray, fontSize = 11.sp, textAlign = TextAlign.Center)
+            }
+            item {
+                Chip(onClick = { Assist.openSettings(ctx) }, label = { Text("Apri impostazioni") },
+                    colors = ChipDefaults.secondaryChipColors(), modifier = Modifier.fillMaxWidth())
+            }
+        }
+    }
+}
 
 // ====================================================================== TAILSCALE
 @Composable
