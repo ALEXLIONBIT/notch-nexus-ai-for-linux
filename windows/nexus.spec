@@ -4,7 +4,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, co
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 TOOLS = ["apps", "desktop", "screen", "inputs", "shell", "system", "windows", "cast", "install", "image",
-         "extra", "camera", "_win_input", "_win_windows"]
+         "extra", "camera", "aimodels", "_win_input", "_win_windows"]
 
 datas = [
     (os.path.join(ROOT, "ui", "qml"), "ui/qml"),
@@ -18,7 +18,7 @@ datas += collect_data_files("piper")                 # espeak-ng per la pronunci
 datas += collect_data_files("faster_whisper")        # Silero VAD
 datas += collect_data_files("onnxruntime")
 
-hidden = ["nexus.tools." + t for t in TOOLS] + ["nexus.winsetup", "nexus.gateway", "selftest", "app"]
+hidden = ["nexus.tools." + t for t in TOOLS] + ["nexus.models", "nexus.winsetup", "nexus.gateway", "selftest", "app"]
 hidden += collect_submodules("winrt") + collect_submodules("openwakeword") + collect_submodules("piper")
 hidden += ["pycaw.pycaw", "comtypes.stream", "win32timezone", "send2trash", "zeroconf._utils.ipaddress",
            "zeroconf._handlers.answers", "sounddevice", "_sounddevice_data"]

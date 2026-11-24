@@ -18,6 +18,12 @@ Item {
     property var providerModels: []      // modelli caricati dal provider in modifica
     property string providerMsg: ""
     property var update: ({ current: "", behind: 0, news: [], error: "" })
+    // Personalizza → Modelli (Ollama del cervello attivo)
+    property var models: ({ target: "", url: "", current: "", installed: [], error: "" })
+    property var modelResults: []
+    property real vramGb: 0
+    property bool modelSearching: false
+    property var modelProgress: ({ name: "", text: "", pct: -1, done: true, error: "" })
     property bool providerOk: true
     property string platform: Qt.platform.os === "windows" ? "windows" : "linux"
     property string appVersion: ""
@@ -210,6 +216,9 @@ Item {
             case "browsers": store.browsers = d.list; break
             case "presets": store.presets = d.presets; break
             case "update_status": store.update = d; break
+            case "models": store.models = d; break
+            case "models_search": store.modelResults = d.results; store.vramGb = d.vram_gb; store.modelSearching = false; break
+            case "model_progress": store.modelProgress = d; break
             case "provider_models": store.providerModels = d.models; store.providerMsg = d.models.length + " modelli trovati"; store.providerOk = true; break
             case "provider_result": store.providerMsg = d.text; store.providerOk = d.ok; break
             case "session":

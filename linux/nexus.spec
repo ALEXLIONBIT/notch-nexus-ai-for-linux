@@ -4,7 +4,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, co
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 TOOLS = ["apps", "desktop", "screen", "inputs", "shell", "system", "windows", "cast", "install", "image",
-         "extra", "camera"]
+         "extra", "camera", "aimodels"]
 
 datas = [
     (os.path.join(ROOT, "ui", "qml"), "ui/qml"),
@@ -18,7 +18,7 @@ datas += collect_data_files("piper")
 datas += collect_data_files("faster_whisper")
 datas += collect_data_files("onnxruntime")
 
-hidden = ["nexus.tools." + t for t in TOOLS] + ["nexus.winsetup", "nexus.gateway", "nexus.tailnet", "selftest", "app"]
+hidden = ["nexus.tools." + t for t in TOOLS] + ["nexus.models", "nexus.winsetup", "nexus.gateway", "nexus.tailnet", "selftest", "app"]
 hidden += collect_submodules("openwakeword") + collect_submodules("piper") + collect_submodules("evdev")
 hidden += ["sounddevice", "_sounddevice_data", "certifi"]
 

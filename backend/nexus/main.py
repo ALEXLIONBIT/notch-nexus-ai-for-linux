@@ -126,6 +126,8 @@ class Nexus:
             threading.Thread(target=tailnet.connect, args=(lambda d: self.bus.emit("tailscale", **d),), daemon=True).start()
         elif t == "setup_choice":
             threading.Thread(target=self.setup_choice, args=(msg.get("choice"),), daemon=True).start()
+        elif t in ("models_installed", "models_search", "model_pull", "model_delete", "model_use"):
+            threading.Thread(target=self.models_command, args=(t, msg), daemon=True).start()
         elif t in ("provider_save", "provider_delete", "provider_models", "provider_test"):
             threading.Thread(target=self.provider_command, args=(t, msg), daemon=True).start()
 
@@ -317,6 +319,51 @@ class Nexus:
             pass
 
     # ---------- provider ----------
+    # ---------- modelli di Ollama (Personalizza → Modelli) ----------
+    def models_command(self, t, msg):
+        from . import models
+        p = models.target(self.cfg)
+        name = (msg.get("name") or "").strip()
+
+        def progress(text, pct=-1, done=False, error=""):
+            self.bus.emit("model_progress", name=name, text=text, pct=pct, done=done, error=error)
+        try:
+            if p is None:
+                raise RuntimeError("aggiungi prima un cervello Ollama (questo PC o un PC in rete)")
+            if t == "models_search":
+                from .winsetup import vram_mb
+                v = vram_mb()
+                rs = models.search(msg.get("query", ""))
+                for r in rs:
+                    for s in r["sizes"]:
+                        s["fit"] = models.fits(s["gb"], v)
+                self.bus.emit("models_search", results=rs, vram_gb=round(v / 1024, 1))
+                return
+            if t == "model_pull":
+                progress(f"Scarico {name}…", 0)
+                models.pull(p, name, progress)
+                if msg.get("use"):
+                    p["model"] = name
+                    self.cfg["provider"] = p["id"]
+                    self.cfg.save()
+                    self.bus.emit("config", config=self.cfg.public())
+                progress(f"{name} installato" + (" e in uso" if msg.get("use") else ""), 100, done=True)
+            elif t == "model_delete":
+                models.delete(p, name)
+            elif t == "model_use":
+                p["model"] = name
+                self.cfg["provider"] = p["id"]
+                self.cfg.save()
+                self.bus.emit("config", config=self.cfg.public())
+            self.bus.emit("models", target=p.get("name", ""), url=p.get("base_url", ""),
+                          current=p.get("model", ""), installed=models.installed(p), error="")
+        except Exception as e:
+            if t == "model_pull":
+                progress("", error=str(e)[:200])
+            else:
+                self.bus.emit("models", target=(p or {}).get("name", ""), url=(p or {}).get("base_url", ""),
+                              current=(p or {}).get("model", ""), installed=[], error=str(e)[:200])
+
     def provider_command(self, t, msg):
         from .providers import make, PRESETS
         cfg = self.cfg
