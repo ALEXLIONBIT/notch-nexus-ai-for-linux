@@ -115,6 +115,11 @@ class Voice:
                     if levels:
                         self.bus.emit("level", v=float(min(1.0, np.sqrt(np.mean(b ** 2)) * 4)))
                     out.write(b.reshape(-1, 1))
+        except Exception as e:                  # nessuna uscita audio (casse staccate, PC senza scheda audio)
+            if not getattr(self, "_no_out", False):
+                self._no_out = True
+                print("uscita audio non disponibile:", e)
+                self.bus.emit("log", text="Nessuna uscita audio: le risposte restano solo scritte.")
         finally:
             if levels:
                 self.bus.emit("level", v=0)

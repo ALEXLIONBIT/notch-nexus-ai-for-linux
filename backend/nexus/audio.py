@@ -44,15 +44,40 @@ class Ears:
 
     # ---------- stream ----------
     def start(self):
+        """Apre il microfono. Se non c'è (PC senza microfono, cuffie staccate) NEXUS parte lo stesso
+        e riprova ogni 10 s: si usa scrivendo, e la voce torna appena il microfono c'è."""
+        self.stream = None
+        threading.Thread(target=self._loop, daemon=True, name="ears").start()
+        if not self._open():
+            print("nessun microfono: NEXUS parte lo stesso, riprovo ogni 10 s")
+            self.bus.emit("log", text="Nessun microfono trovato: puoi scrivere, la voce torna appena colleghi un microfono.")
+            threading.Thread(target=self._retry, daemon=True, name="ears-retry").start()
+
+    def _open(self):
         def cb(indata, frames, t, status):
             try:
                 self.q.put_nowait(indata[:, 0].copy())
             except queue.Full:
                 pass
-        self.stream = sd.InputStream(samplerate=RATE, channels=1, dtype="int16",
-                                     blocksize=CHUNK, callback=cb)
-        self.stream.start()
-        threading.Thread(target=self._loop, daemon=True, name="ears").start()
+        try:
+            st = sd.InputStream(samplerate=RATE, channels=1, dtype="int16", blocksize=CHUNK, callback=cb)
+            st.start()
+        except Exception as e:                     # PortAudioError, nessun dispositivo, driver
+            self._mic_err = str(e)
+            return False
+        self.stream = st
+        return True
+
+    def _retry(self):
+        while self.stream is None:
+            time.sleep(10)
+            try:
+                sd._terminate(); sd._initialize()   # rilegge l'elenco dei dispositivi
+            except Exception:
+                pass
+            if self._open():
+                print("microfono trovato")
+                self.bus.emit("log", text="Microfono collegato: puoi parlare.")
 
     def _loop(self):
         last_level = 0.0
@@ -111,6 +136,8 @@ class Ears:
 
     def record(self, wait=4.0, silence=0.7, max_s=15.0):
         """Registra finché l'utente parla. Ritorna int16 array o None se silenzio."""
+        if self.stream is None:                   # niente microfono
+            return None
         pre = list(self.preroll)
         if self.vad is not None:
             self.vad.reset_states()

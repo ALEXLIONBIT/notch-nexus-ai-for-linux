@@ -71,6 +71,8 @@ class Nexus:
 
     def _idle_text(self):
         w = self.cfg["wake_word"].replace("_", " ").title()
+        if self.ears and self.ears.stream is None:
+            return "Nessun microfono: scrivimi"
         return f"Di' “{w}”" if self.ears and self.ears.oww else "Clicca 🎤 per parlare"
 
     def set_state(self, state, detail=""):
@@ -357,6 +359,9 @@ class Nexus:
         threading.Thread(target=self.session, args=(text,), daemon=True).start()
 
     def listen_once(self, wait=5.0):
+        if self.ears.stream is None:
+            self.bus.emit("log", text="Nessun microfono: scrivimi la richiesta.")
+            return ""
         self.set_state("listening", "Ti ascolto…")
         audio = self.ears.record(wait=wait)
         if audio is None:
