@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
 
 /** Immagini: le chiede al server di NEXUS sul PC (Z-Image-Turbo) o a un'API compatibile OpenAI. */
 object Images {
-    private val http = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(420, TimeUnit.SECONDS).build()
+    private val http = OkHttpClient.Builder().proxySelector(Ts.selector).connectTimeout(15, TimeUnit.SECONDS).readTimeout(420, TimeUnit.SECONDS).build()
 
     suspend fun generate(ctx: Context, prompt: String, shape: String): String = withContext(Dispatchers.IO) {
         val size = when (shape) { "verticale" -> "768x1024"; "orizzontale" -> "1024x768"; else -> "1024x1024" }

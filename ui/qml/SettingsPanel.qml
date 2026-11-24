@@ -322,6 +322,27 @@ Rectangle {
                 onClicked: { editor.open(null); panel.providerOpen = true }
             }
 
+            // ---------- tailscale ----------
+            Section { text: "Tailscale" }
+            Text {
+                Layout.preferredWidth: col.width; wrapMode: Text.Wrap
+                color: panel.s.tailscale.error ? "#ff5a6e" : panel.s.inkSoft
+                font { family: panel.s.sansFamily; pixelSize: 12 }
+                Component.onCompleted: panel.s.send("tailscale_status")
+                text: panel.s.tailscale.error ? "Errore: " + panel.s.tailscale.error
+                    : panel.s.tailscale.text ? panel.s.tailscale.text
+                    : !panel.s.tailscale.installed ? "Tailscale non è installato: collega telefono, orologio e altri PC al tuo NEXUS anche fuori casa."
+                    : panel.s.tailscale.state === "Running" ? "Collegato come " + panel.s.tailscale.name + " (" + panel.s.tailscale.ip + ")"
+                    : "Tailscale è installato ma non collegato."
+            }
+            RowLayout {
+                spacing: 8
+                IconButton { visible: panel.s.tailscale.state !== "Running"; enabled: !panel.s.tailscale.working
+                    text: panel.s.tailscale.working ? "Mi collego…" : "Collega Tailscale"; size: 34; tint: "#0b1015"; fill: panel.s.led
+                    onClicked: panel.s.send("tailscale_connect") }
+                IconButton { text: "Aggiorna stato"; size: 34; tint: panel.s.ink; fill: panel.chip; onClicked: panel.s.send("tailscale_status") }
+            }
+
             // ---------- aggiornamenti ----------
             Section { text: "Aggiornamenti" }
             Text {

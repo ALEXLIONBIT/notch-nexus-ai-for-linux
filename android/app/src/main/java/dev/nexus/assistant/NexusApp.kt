@@ -9,5 +9,6 @@ class NexusApp : Application() {
         super.onCreate()
         Prefs.init(this)
         Core.init(this)
+        if (Prefs.tailscale) dev.nexus.assistant.core.Ts.start(this, "nexus-telefono")
     }
 }

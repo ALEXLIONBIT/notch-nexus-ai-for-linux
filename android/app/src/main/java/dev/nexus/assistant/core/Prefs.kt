@@ -86,8 +86,12 @@ object Prefs {
     var speechPitch by mutableStateOf(0.85f)
     var autoListen by mutableStateOf(true)
     var autoMode by mutableStateOf(false)       // true = niente conferme
+    var tailscale by mutableStateOf(false)      // Tailscale dentro NEXUS acceso
+
+    private var appCtx: Context? = null
 
     fun init(ctx: Context) {
+        appCtx = ctx.applicationContext
         sp = ctx.getSharedPreferences("nexus", Context.MODE_PRIVATE)
         providers = runCatching {
             val a = JSONArray(sp.getString("providers", "[]"))
@@ -108,6 +112,7 @@ object Prefs {
         speechRate = sp.getFloat("speechRate", 1.05f); speechPitch = sp.getFloat("speechPitch", 0.85f)
         autoListen = sp.getBoolean("autoListen", true)
         autoMode = sp.getBoolean("autoMode", false)
+        tailscale = sp.getBoolean("tailscale", false)
     }
 
     fun save() {
@@ -120,8 +125,9 @@ object Prefs {
             .putString("helmetShape", helmetShape).putString("antenna", antenna).putBoolean("ears", ears)
             .putFloat("glow", glow).putString("customEye", customEye).putString("customMouth", customMouth)
             .putString("palette", palette.joinToString(",") { (it.toLong() and 0xFFFFFFFFL).toString() })
-            .putFloat("speechRate", speechRate).putFloat("speechPitch", speechPitch).putBoolean("autoListen", autoListen).putBoolean("autoMode", autoMode)
+            .putFloat("speechRate", speechRate).putFloat("speechPitch", speechPitch).putBoolean("autoListen", autoListen).putBoolean("autoMode", autoMode).putBoolean("tailscale", tailscale)
             .apply()
+        appCtx?.let { WatchSync.schedule(it) }        // anche l'orologio resta aggiornato
     }
 
     fun active(): Provider? = providers.firstOrNull { it.id == activeProvider } ?: providers.firstOrNull()

@@ -55,6 +55,15 @@
             </intent-filter>
         </activity>
 
+        <!-- l'orologio (NEXUS per Wear OS) chiede le impostazioni -->
+        <service android:name=".core.PhoneWearService" android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <action android:name="com.google.android.gms.wearable.REQUEST_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/nexus" />
+            </intent-filter>
+        </service>
+
         <!-- assistente digitale predefinito (al posto di Gemini) -->
         <service
             android:name=".assist.NexusVoiceService"

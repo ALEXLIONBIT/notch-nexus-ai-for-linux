@@ -11,13 +11,27 @@ android {
         applicationId = "dev.nexus.assistant"
         minSdk = 28
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.4.0"
+        versionCode = 7
+        versionName = "0.5.0"
+    }
+    // firma delle release: ~/.android/nexus-release.keystore (fuori dal repo). Stessa chiave per telefono e orologio,
+    // altrimenti gli aggiornamenti non si installano e l'orologio non riceve le impostazioni dal telefono.
+    val nexusKey = file(System.getProperty("user.home") + "/.android/nexus-release.keystore")
+    signingConfigs {
+        create("nexus") {
+            storeFile = nexusKey
+            storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android"
+        }
     }
     buildTypes {
         release {
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            // R8 toglie il codice che non serve (soprattutto le icone): APK molto più leggero
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // solo le architetture dei dispositivi veri (NEXUS_ABI_ALL=1 per includere anche l'emulatore x86_64)
+            if (System.getenv("NEXUS_ABI_ALL") == null) ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+            signingConfig = if (nexusKey.exists()) signingConfigs.getByName("nexus") else signingConfigs.getByName("debug")
         }
     }
     compileOptions {
@@ -25,6 +39,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    // librerie native compresse dentro l'APK (Tailscale pesa ~30 MB non compresso): download e spazio molto minori
+    packaging { jniLibs { useLegacyPackaging = true } }
     buildFeatures { compose = true }
 }
 
@@ -42,4 +58,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    if (rootProject.file("libs/tsbridge.aar").exists()) implementation(files(rootProject.file("libs/tsbridge.aar")))
+    implementation("com.google.android.gms:play-services-wearable:19.0.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
 }

@@ -31,7 +31,7 @@ data class Msg(
 )
 
 object Llm {
-    private val http = OkHttpClient.Builder()
+    private val http = OkHttpClient.Builder().proxySelector(Ts.selector)
         .connectTimeout(15, TimeUnit.SECONDS).readTimeout(180, TimeUnit.SECONDS).build()
     private val JSON_TYPE = "application/json".toMediaType()
 

@@ -116,6 +116,12 @@ class Nexus:
             threading.Thread(target=self.update_check, daemon=True).start()
         elif t == "update_apply":
             threading.Thread(target=self.update_apply, daemon=True).start()
+        elif t == "tailscale_status":
+            from . import tailnet
+            threading.Thread(target=lambda: self.bus.emit("tailscale", **tailnet.status()), daemon=True).start()
+        elif t == "tailscale_connect":
+            from . import tailnet
+            threading.Thread(target=tailnet.connect, args=(lambda d: self.bus.emit("tailscale", **d),), daemon=True).start()
         elif t == "setup_choice":
             threading.Thread(target=self.setup_choice, args=(msg.get("choice"),), daemon=True).start()
         elif t in ("provider_save", "provider_delete", "provider_models", "provider_test"):

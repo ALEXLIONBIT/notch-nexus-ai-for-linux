@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/netip"
@@ -31,7 +32,38 @@ var (
 	proxyLn  net.Listener
 	lastErr  string
 	ifaceStr string // interfacce di rete passate da Kotlin (Android non lascia leggerle con netlink)
+	starting bool
+	logMu    sync.Mutex
+	logRing  []string // ultime righe del log di tsnet (per capire dove si ferma)
 )
+
+// logf scrive in logcat (gomobile manda il pacchetto log a logcat, tag GoLog) e tiene le ultime righe.
+func logf(format string, args ...any) {
+	line := fmt.Sprintf(format, args...)
+	log.Print("tsnet: " + line)
+	logMu.Lock()
+	logRing = append(logRing, time.Now().Format("15:04:05 ")+line)
+	if len(logRing) > 200 {
+		logRing = logRing[len(logRing)-200:]
+	}
+	logMu.Unlock()
+}
+
+func lastLog() string {
+	logMu.Lock()
+	defer logMu.Unlock()
+	if len(logRing) == 0 {
+		return ""
+	}
+	return logRing[len(logRing)-1]
+}
+
+// Logs ritorna le ultime righe del log di tsnet.
+func Logs() string {
+	logMu.Lock()
+	defer logMu.Unlock()
+	return strings.Join(logRing, "\n")
+}
 
 // SetInterfaces riceve le interfacce di rete da Android, una per riga:
 // "nome index mtu up loopback indirizzo/prefisso,indirizzo/prefisso"
@@ -76,23 +108,34 @@ func androidInterfaces() ([]netmon.Interface, error) {
 	return out, nil
 }
 
-// Start accende il nodo. dir: cartella privata dell'app (lì resta la chiave del nodo, così resta collegato).
+// Start accende il nodo in background (ritorna subito: lo stato si legge con Status).
+// dir: cartella privata dell'app (lì resta la chiave del nodo, così resta collegato).
 // authKey può essere vuota: allora serve il login dal link (Status().authURL).
 func Start(dir, hostname, authKey string) error {
 	mu.Lock()
 	defer mu.Unlock()
-	if srv != nil {
+	if srv != nil || starting {
 		return nil
 	}
+	starting = true
+	lastErr = ""
 	os.Setenv("TS_NO_LOGS_NO_SUPPORT", "true") // niente log inviati a Tailscale
 	netmon.RegisterInterfaceGetter(androidInterfaces)
-	s := &tsnet.Server{Dir: dir, Hostname: hostname, AuthKey: authKey, Logf: func(string, ...any) {}}
-	if err := s.Start(); err != nil {
-		lastErr = err.Error()
-		return err
-	}
-	srv = s
-	lastErr = ""
+	go func() {
+		s := &tsnet.Server{Dir: dir, Hostname: hostname, AuthKey: authKey, Logf: logf, UserLogf: logf}
+		logf("avvio (dir %s, host %s)", dir, hostname)
+		err := s.Start()
+		mu.Lock()
+		defer mu.Unlock()
+		starting = false
+		if err != nil {
+			lastErr = err.Error()
+			logf("avvio fallito: %v", err)
+			return
+		}
+		srv = s
+		logf("nodo acceso")
+	}()
 	return nil
 }
 
@@ -103,6 +146,7 @@ type status struct {
 	Name    string   `json:"name"`
 	Tailnet string   `json:"tailnet"`
 	Error   string   `json:"error"`
+	Log     string   `json:"log"` // ultima riga del log
 }
 
 // Status ritorna lo stato in JSON.
@@ -110,8 +154,14 @@ func Status() string {
 	mu.Lock()
 	s := srv
 	e := lastErr
+	busy := starting
 	mu.Unlock()
-	st := status{State: "Spento", Error: e}
+	st := status{State: "Spento", Error: e, Log: lastLog()}
+	if busy {
+		st.State = "Starting"
+	} else if e != "" {
+		st.State = "Errore"
+	}
 	if s != nil {
 		if lc, err := s.LocalClient(); err == nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)

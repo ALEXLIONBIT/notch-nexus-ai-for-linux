@@ -13,7 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -33,7 +33,9 @@ jobs:
         shell: pwsh
         run: |
           $setup = Get-ChildItem windows\dist\NEXUS-Setup-*.exe | Select-Object -First 1
-          Start-Process $setup.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/TASKS=desktopicon" -Wait
+          # -Wait aspetterebbe anche NEXUS (l'installer silenzioso lo riapre): si aspetta solo l'installer
+          $p = Start-Process $setup.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/TASKS=desktopicon" -PassThru
+          $p.WaitForExit()
           $exe = "$env:LOCALAPPDATA\Programs\NEXUS\NEXUS.exe"
           if (!(Test-Path $exe)) { throw "NEXUS.exe non installato" }
           # aspetta che NEXUS sia acceso (al primo avvio scarica Whisper, ~1,6 GB)

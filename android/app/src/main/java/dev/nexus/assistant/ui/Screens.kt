@@ -58,6 +58,7 @@ import dev.nexus.assistant.core.PRESETS
 import dev.nexus.assistant.core.Prefs
 import dev.nexus.assistant.core.Provider
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 @Composable
 fun SectionTitle(t: String) = Text(t, color = Look.theme.ink, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold,
@@ -353,6 +354,46 @@ fun BrainScreen() {
             }
         }
         PrimaryButton("+ Aggiungi cervello", Modifier.fillMaxWidth()) { adding = true }
+        Spacer(Modifier.height(8.dp))
+        SectionTitle("Tailscale")
+        Text("Per usare il PC di casa anche fuori casa senza l'app Tailscale: NEXUS si collega da solo alla tua rete Tailscale.",
+            color = th.inkSoft, fontSize = 13.sp)
+        val tsCtx = androidx.compose.ui.platform.LocalContext.current
+        val TsO = dev.nexus.assistant.core.Ts
+        Text("Stato: " + TsO.label + if (TsO.name.isNotBlank()) " (${TsO.name.substringBefore('.')})" else "", color = th.ink, fontSize = 13.sp)
+        androidx.compose.runtime.LaunchedEffect(TsO.authUrl) {
+            if (TsO.state == "NeedsLogin" && TsO.authUrl.isNotBlank() && Prefs.tailscale)
+                runCatching { tsCtx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(TsO.authUrl))) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (TsO.state != "Running") SoftButton("Collega", Modifier.weight(1f)) {
+                Prefs.tailscale = true; Prefs.save(); TsO.start(tsCtx, "nexus-telefono")
+            } else SoftButton("Scollega", Modifier.weight(1f)) { TsO.logout(); Prefs.tailscale = false; Prefs.save() }
+            val tsScope = androidx.compose.runtime.rememberCoroutineScope()
+            SoftButton("Collega anche l'orologio", Modifier.weight(1f)) {
+                tsScope.launch {
+                    dev.nexus.assistant.core.WatchSync.status = runCatching {
+                        val nodes = com.google.android.gms.wearable.Wearable.getNodeClient(tsCtx).connectedNodes.await()
+                        if (nodes.isEmpty()) "Nessun orologio collegato" else {
+                            nodes.forEach { com.google.android.gms.wearable.Wearable.getMessageClient(tsCtx).sendMessage(it.id, "/nexus/tailscale", ByteArray(0)).await() }
+                            "Fra poco si apre qui il login per l'orologio: approvalo."
+                        }
+                    }.getOrElse { "Non riesco: ${it.message?.take(60)}" }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        SectionTitle("Orologio Wear OS")
+        Text("Con NEXUS per Wear OS sull'orologio, cervelli e aspetto arrivano da soli. Se non succede, premi qui.",
+            color = th.inkSoft, fontSize = 13.sp)
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        SoftButton("Invia all'orologio", Modifier.fillMaxWidth()) {
+            dev.nexus.assistant.core.WatchSync.status = "Invio…"
+            scope.launch { dev.nexus.assistant.core.WatchSync.send(ctx) }
+        }
+        if (dev.nexus.assistant.core.WatchSync.status.isNotBlank())
+            Text(dev.nexus.assistant.core.WatchSync.status, color = th.inkSoft, fontSize = 12.sp)
     }
     if (adding || editing != null) ProviderDialog(editing) { adding = false; editing = null }
 }
