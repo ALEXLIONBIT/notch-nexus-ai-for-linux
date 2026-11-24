@@ -27,6 +27,8 @@ QtObject {
     property Window chatWin: ChatWindow {
         store: root.store
         LayerShell.Window.scope: "nexus-chat"
+        // nessuna ancora = al centro dello schermo (impostato qui: AnchorNone manca nelle versioni vecchie)
+        Component.onCompleted: LayerShell.Window.anchors = 0
         LayerShell.Window.layer: LayerShell.Window.LayerTop
         LayerShell.Window.exclusionZone: -1
         LayerShell.Window.keyboardInteractivity: LayerShell.Window.KeyboardInteractivityOnDemand
@@ -40,6 +42,8 @@ QtObject {
         height: setupBox.implicitHeight
         visible: root.store.connected && root.store.config.setup_done === false
         LayerShell.Window.scope: "nexus-setup"
+        // nessuna ancora = al centro dello schermo (impostato qui: AnchorNone manca nelle versioni vecchie)
+        Component.onCompleted: LayerShell.Window.anchors = 0
         LayerShell.Window.layer: LayerShell.Window.LayerOverlay
         LayerShell.Window.exclusionZone: -1
         LayerShell.Window.keyboardInteractivity: LayerShell.Window.KeyboardInteractivityOnDemand

@@ -1,4 +1,4 @@
-**Novità 0.3.1** — su KDE Plasma (Wayland) il notch torna come deve essere: in alto al centro, sopra le finestre, senza voce nella barra delle applicazioni. L'AppImage usa il layer-shell di KDE già presente nel sistema (servono i pacchetti `pyside6` e `layer-shell-qt`, già installati su Plasma; su Ubuntu: `python3-pyside6.qtquick`). Senza, il notch passa da XWayland e resta comunque in alto e fuori dalla barra.
+**Novità 0.3.2** — su KDE Plasma (Wayland) il notch torna come deve essere: in alto al centro, sopra le finestre, senza voce nella barra delle applicazioni. L'AppImage usa il layer-shell di KDE già presente nel sistema (servono i pacchetti `pyside6` e `layer-shell-qt`, già installati su Plasma; su Ubuntu: `python3-pyside6.qtquick`). Senza, il notch passa da XWayland e resta comunque in alto e fuori dalla barra.
 
 **Novità 0.3.0**
 - **Chat**: pulsante 💬 nel notch → finestra con tutte le conversazioni salvate: cerca, riapri (NEXUS ricorda il discorso), nuova chat, elimina; scrivi o parla da lì
