@@ -143,6 +143,22 @@ Le chiavi API restano solo in `config.json` sul tuo PC, che non va mai su GitHub
 
 ## Installazione
 
+### In un file: AppImage (il modo più semplice)
+
+Scarica `NEXUS-*-x86_64.AppImage` dalle [release](https://github.com/ALEXLIONBIT/notch-nexus-ai-for-linux/releases)
+(quelle `linux-v*`) e aprilo:
+
+```bash
+chmod +x NEXUS-*-x86_64.AppImage && ./NEXUS-*-x86_64.AppImage
+./NEXUS-*-x86_64.AppImage --permessi    # una volta sola: mouse e tastiera virtuali, poi esci e rientra
+```
+
+Al primo avvio si mette nel menu delle app e nell'avvio automatico e chiede dove gira il cervello (Ollama su questo
+PC oppure un provider). Si aggiorna da solo. Funziona su Ubuntu 22.04+, Mint, Debian, Fedora, Arch/CachyOS.
+Nell'AppImage il notch è una finestra normale: il layer-shell di KDE c'è solo con l'installazione qui sotto.
+
+### Dal codice (script)
+
 ```bash
 git clone https://github.com/ALEXLIONBIT/notch-nexus-ai-for-linux.git ~/nexus
 cd ~/nexus && ./scripts/install.sh
