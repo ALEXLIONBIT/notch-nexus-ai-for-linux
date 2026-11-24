@@ -71,6 +71,7 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     app.setOrganizationName("nexus")
     app.setApplicationName("nexus-ui")
+    app.setDesktopFileName("nexus-assistant")      # icona giusta nella barra (non quella generica di Wayland)
     for f in sorted((HERE / "fonts").glob("*.ttf")):
         QFontDatabase.addApplicationFont(str(f))
     engine = QQmlApplicationEngine()

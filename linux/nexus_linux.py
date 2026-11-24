@@ -45,6 +45,30 @@ def _certs():
         pass
 
 
+CHILD_ENV = None
+
+
+def _system_ui():
+    """Su KDE Wayland il notch vero (in alto, fuori dalla barra delle applicazioni) richiede il layer-shell,
+    che il Qt incluso nell'AppImage non può caricare: l'interfaccia parte allora con il Python e il PySide6
+    del sistema (come l'installazione da script). Ritorna il comando, oppure None se non si può."""
+    if os.environ.get("XDG_SESSION_TYPE") != "wayland" or os.environ.get("NEXUS_NO_LAYERSHELL") == "1":
+        return None
+    if not Path("/usr/lib/qt6/qml/org/kde/layershell/qmldir").exists():
+        return None
+    for py in ("/usr/bin/python3", "/usr/bin/python"):
+        if not os.path.exists(py):
+            continue
+        try:
+            r = subprocess.run([py, "-c", "import PySide6.QtQml, PySide6.QtNetwork"], env=CHILD_ENV,
+                               capture_output=True, timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if r.returncode == 0:
+            return [py, str(BASE / "ui" / "app.py")]
+    return None
+
+
 def _clean_children():
     """I programmi aperti da NEXUS (browser, Dolphin, terminale…) non devono ereditare le librerie
     e i percorsi Qt/Python dell'AppImage, altrimenti si chiudono o si aprono male."""
@@ -58,6 +82,8 @@ def _clean_children():
         env.pop(k, None)
         if orig:
             env[k] = orig
+    global CHILD_ENV
+    CHILD_ENV = env
     init = subprocess.Popen.__init__
 
     def patched(self, *a, **kw):
@@ -167,6 +193,18 @@ def main():
             import traceback
             traceback.print_exc()
     threading.Thread(target=backend, daemon=True, name="backend").start()
+    cmd = _system_ui() if getattr(sys, "frozen", False) else None
+    if cmd:
+        print("interfaccia con il Qt di sistema (layer-shell):", cmd[0])
+        env = dict(CHILD_ENV, NEXUS_UI_DIR=str(BASE / "ui"))
+        r = subprocess.run(cmd, env=env)
+        if r.returncode == 0:
+            os._exit(0)                                          # "Esci da NEXUS"
+        print("interfaccia di sistema chiusa con codice", r.returncode, "- uso quella inclusa")
+    if os.environ.get("XDG_SESSION_TYPE") == "wayland" and os.environ.get("DISPLAY") and getattr(sys, "frozen", False):
+        # senza layer-shell su Wayland le finestre non si possono mettere in alto né togliere dalla barra:
+        # con XWayland sì (notch in alto, fuori dalla barra delle applicazioni)
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
     import app                                                   # ui/app.py
     app.main()
 

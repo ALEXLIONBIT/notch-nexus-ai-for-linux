@@ -104,10 +104,14 @@ Window {
         ColumnLayout {
             Layout.fillWidth: true; Layout.fillHeight: true
             spacing: 0
-            Text {
+            RowLayout {
                 Layout.fillWidth: true; Layout.margins: 18; Layout.bottomMargin: 6
-                text: win.s.chatTitle || "Nuova chat"; elide: Text.ElideRight
-                color: win.s.ink; font { family: win.s.sansFamily; pixelSize: 18; weight: Font.Bold }
+                Text {
+                    Layout.fillWidth: true
+                    text: win.s.chatTitle || "Nuova chat"; elide: Text.ElideRight
+                    color: win.s.ink; font { family: win.s.sansFamily; pixelSize: 18; weight: Font.Bold }
+                }
+                IconButton { glyph: "close"; size: 32; tint: win.s.inkSoft; tip: "Chiudi"; onClicked: win.s.chatOpen = false }
             }
             ListView {
                 id: msgs
