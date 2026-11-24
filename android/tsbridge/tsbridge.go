@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -120,6 +121,16 @@ func Start(dir, hostname, authKey string) error {
 	starting = true
 	lastErr = ""
 	os.Setenv("TS_NO_LOGS_NO_SUPPORT", "true") // niente log inviati a Tailscale
+	// su Android non ci sono HOME né XDG_CACHE_HOME: senza, logpolicy.LogsDir va in panic e chiude l'app
+	logs := filepath.Join(dir, "logs")
+	os.MkdirAll(logs, 0o700)
+	os.Setenv("TS_LOGS_DIR", logs)
+	if os.Getenv("HOME") == "" {
+		os.Setenv("HOME", dir)
+	}
+	if os.Getenv("XDG_CACHE_HOME") == "" {
+		os.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
+	}
 	netmon.RegisterInterfaceGetter(androidInterfaces)
 	go func() {
 		s := &tsnet.Server{Dir: dir, Hostname: hostname, AuthKey: authKey, Logf: logf, UserLogf: logf}
