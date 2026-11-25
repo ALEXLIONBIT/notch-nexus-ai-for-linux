@@ -66,12 +66,79 @@ class Bridge(QObject):
             self.sock.write((json.dumps({"type": type_, **(data or {})}) + "\n").encode())
 
 
+class WindowKeeper(QObject):
+    """Rimette il notch quando sparisce: col coperchio chiuso o in sospensione lo schermo del portatile
+    "scompare", KDE chiude le superfici del notch e al ritorno nessuno le ricreava (NEXUS rispondeva ma
+    non si vedeva più). Si attiva quando cambiano gli schermi, al risveglio e con un controllo ogni 10 s."""
+
+    def __init__(self, app, root):
+        super().__init__()
+        self.app, self.root = app, root
+        self.misses = 0
+        self.last = 0.0
+        self.soon = QTimer(self, singleShot=True, interval=2000, timeout=self.revive)
+        app.screenAdded.connect(lambda *_: self.soon.start())
+        app.screenRemoved.connect(lambda *_: self.soon.start())
+        app.primaryScreenChanged.connect(lambda *_: self.soon.start())
+        self.watch = QTimer(self, interval=10000, timeout=self.check)
+        self.watch.start()
+        try:                                             # risveglio dalla sospensione (systemd-logind)
+            from PySide6.QtCore import SLOT
+            from PySide6.QtDBus import QDBusConnection
+            QDBusConnection.systemBus().connect("org.freedesktop.login1", "/org/freedesktop/login1",
+                                                "org.freedesktop.login1.Manager", "PrepareForSleep",
+                                                self, SLOT("sleeping(bool)"))
+        except Exception as e:
+            print("sospensione non osservata:", e)
+
+    @Slot(bool)
+    def sleeping(self, going):
+        if not going:                                    # appena svegliato: lo schermo torna dopo un attimo
+            QTimer.singleShot(3000, self.revive)
+
+    def _win(self, name):
+        return next((w for w in self.app.topLevelWindows() if w.objectName() == name), None)
+
+    def revive(self):
+        prim = self.app.primaryScreen()
+        if prim is None or prim not in self.app.screens():
+            return                                       # nessuno schermo vero: riprova al prossimo evento
+        for name in ("nexusNotch", "nexusFace"):
+            w = self._win(name)
+            if w is not None and w.screen() is not prim:
+                w.setScreen(prim)
+        import time
+        self.last = time.time()
+        print("schermo cambiato: ricreo il notch su", prim.name())
+        from PySide6.QtCore import QMetaObject
+        QMetaObject.invokeMethod(self.root, "reviveWindows")
+        self.misses = 0
+
+    def check(self):
+        notch, face = self._win("nexusNotch"), self._win("nexusFace")
+        if notch is None:
+            return
+        if face is not None and face.isVisible():
+            self.misses = 0                              # modalità schermo intero: il notch è nascosto apposta
+            return
+        scr = notch.screen()
+        lost = scr is None or scr not in self.app.screens() or not notch.isVisible() or not notch.isExposed()
+        self.misses = self.misses + 1 if lost else 0
+        import time
+        # due controlli di fila (non un attimo di passaggio) e non più di una volta al minuto
+        # (a schermo spento per risparmio energetico il notch non viene disegnato: non serve insistere)
+        if self.misses >= 2 and time.time() - self.last > 60:
+            self.revive()
+
+
 def main():
     app = QGuiApplication.instance() or QGuiApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     app.setOrganizationName("nexus")
     app.setApplicationName("nexus-ui")
-    app.setDesktopFileName("nexus-assistant")      # icona giusta nella barra (non quella generica di Wayland)
+    # icona giusta nella barra (AppImage): solo se esiste la voce di menu, altrimenti il portale si lamenta nel journal
+    if (Path.home() / ".local/share/applications/nexus-assistant.desktop").exists():
+        app.setDesktopFileName("nexus-assistant")
     for f in sorted((HERE / "fonts").glob("*.ttf")):
         QFontDatabase.addApplicationFont(str(f))
     engine = QQmlApplicationEngine()
@@ -82,6 +149,7 @@ def main():
     engine.load(QUrl.fromLocalFile(str(HERE / "qml" / main_qml)))
     if not engine.rootObjects():
         sys.exit(1)
+    keeper = WindowKeeper(app, engine.rootObjects()[0])   # noqa: F841  (deve restare vivo)
     sys.exit(app.exec())
 
 

@@ -9,6 +9,7 @@ QtObject {
 
     property Window notchWin: Window {
         id: notchWin
+        objectName: "nexusNotch"
         color: "transparent"
         width: notch.implicitWidth
         height: notch.implicitHeight
@@ -53,6 +54,7 @@ QtObject {
 
     property Window faceWin: Window {
         id: faceWin
+        objectName: "nexusFace"
         color: "transparent"
         visible: false
         LayerShell.Window.scope: "nexus-face"
@@ -70,4 +72,16 @@ QtObject {
         function onFullscreenChanged() { faceWin.visible = root.store.fullscreen; notchWin.visible = !root.store.fullscreen }
     }
     Component.onCompleted: Qt.callLater(function() { faceWin.visible = root.store.fullscreen; notchWin.visible = !root.store.fullscreen })
+
+    // chiamata da app.py quando uno schermo sparisce e torna (coperchio chiuso, sospensione, monitor staccato):
+    // il compositor ha chiuso le superfici layer-shell e vanno ricreate da zero
+    function reviveWindows() {
+        notchWin.visible = false
+        faceWin.visible = false
+        reviveLater.restart()
+    }
+    property Timer reviveLater: Timer {
+        interval: 400
+        onTriggered: { faceWin.visible = root.store.fullscreen; notchWin.visible = !root.store.fullscreen }
+    }
 }

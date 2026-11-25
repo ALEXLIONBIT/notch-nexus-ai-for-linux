@@ -1,3 +1,5 @@
+**Novità 0.5.3** — Il notch non sparisce più dopo aver chiuso il coperchio, la sospensione o il cambio di monitor: quando lo schermo torna, NEXUS lo ricrea da solo.
+
 **Novità 0.5.2** — Con Playwright attivo, *apri un sito* e *cerca* passano dal browser pilotato (prima aprivano il browser normale e Playwright restava inutilizzato): NEXUS legge la pagina e può continuare a cliccare e scrivere. Node.js viene trovato anche se installato con nvm.
 
 **Novità 0.5.1** — Al primo avvio NEXUS scarica il riconoscimento vocale (Whisper, 1,6 GB): prima sembrava bloccato, ora nel notch compare l'avanzamento ("Scarico il riconoscimento vocale… 42% · 700 di 1600 MB"). I prossimi avvii sono immediati.

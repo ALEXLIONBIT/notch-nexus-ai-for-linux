@@ -7,6 +7,8 @@ QtObject {
     property Store store: Store {}
 
     property Window notchWin: Window {
+        id: notchWin
+        objectName: "nexusNotch"
         color: "transparent"
         flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
         width: notch.implicitWidth
@@ -20,6 +22,7 @@ QtObject {
 
     property Window faceWin: Window {
         id: faceWin
+        objectName: "nexusFace"
         color: "transparent"
         flags: Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
         visible: false
@@ -52,4 +55,14 @@ QtObject {
         }
     }
     Component.onCompleted: if (root.store.fullscreen) faceWin.showFullScreen()
+
+    // chiamata da app.py quando uno schermo sparisce e torna (coperchio chiuso, sospensione, monitor staccato)
+    function reviveWindows() {
+        notchWin.visible = false
+        reviveLater.restart()
+    }
+    property Timer reviveLater: Timer {
+        interval: 400
+        onTriggered: { notchWin.visible = true; if (root.store.fullscreen) faceWin.showFullScreen() }
+    }
 }
