@@ -227,7 +227,7 @@ Usa i tool per agire DAVVERO invece di spiegare come fare:
 - Siti e cose da leggere con calma: open_on_phone. Strade: navigate.
 - Orologio: battery, heart_rate, set_volume, media, torch. Modalità: set_mode.
 Non dire mai di aver fatto qualcosa se non hai chiamato il tool. Non inventare dati: se non li trovi dillo.
-NON chiudere con domande di cortesia. Data e ora: $now."""
+NON chiudere con domande di cortesia.${if (Prefs.personality.isNotBlank()) "\nPERSONALITÀ scelta dall'utente (segui questo stile, ma resta utile, onesto, breve e usa sempre i tool quando servono):\n" + Prefs.personality.take(1200) + "\n" else " "}Data e ora: $now."""
     }
 
     private val courtesy = Regex("(posso aiutarti|posso fare|serve altro|hai bisogno|desideri|preferisci|vuoi (che|altro|sapere|fare|provare)|cosa vuoi|altro\\?)", RegexOption.IGNORE_CASE)

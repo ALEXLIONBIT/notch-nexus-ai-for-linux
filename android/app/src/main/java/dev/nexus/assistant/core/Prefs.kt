@@ -63,6 +63,7 @@ object Prefs {
     var activeProvider by mutableStateOf("")
     var userName by mutableStateOf("")
     var agentName by mutableStateOf("Nexus")      // come si chiama l'agente (e come lo chiami)
+    var personality by mutableStateOf("")         // come parla (testo libero)
     var wakeAlways by mutableStateOf(false)       // ascolto sempre attivo: "Ehi <nome>" anche a schermo spento
     var imageUrl by mutableStateOf("")          // server immagini (NEXUS sul PC), es. http://100.x.y.z:11434
 
@@ -102,6 +103,7 @@ object Prefs {
         activeProvider = sp.getString("activeProvider", "") ?: ""
         userName = sp.getString("userName", "") ?: ""
         agentName = sp.getString("agentName", "Nexus") ?: "Nexus"
+        personality = sp.getString("personality", "") ?: ""
         wakeAlways = sp.getBoolean("wakeAlways", false)
         imageUrl = sp.getString("imageUrl", "") ?: ""
         theme = sp.getString("theme", theme)!!
@@ -123,7 +125,7 @@ object Prefs {
         val a = JSONArray(); providers.forEach { a.put(it.toJson()) }
         sp.edit()
             .putString("providers", a.toString()).putString("activeProvider", activeProvider)
-            .putString("userName", userName).putString("agentName", agentName).putBoolean("wakeAlways", wakeAlways).putString("imageUrl", imageUrl).putString("theme", theme)
+            .putString("userName", userName).putString("agentName", agentName).putString("personality", personality).putBoolean("wakeAlways", wakeAlways).putString("imageUrl", imageUrl).putString("theme", theme)
             .putInt("led", led).putInt("accent", accent).putInt("shellCustom", shellCustom).putInt("bgCustom", bgCustom)
             .putString("eyeStyle", eyeStyle).putString("mouthStyle", mouthStyle).putString("dotShape", dotShape)
             .putString("helmetShape", helmetShape).putString("antenna", antenna).putBoolean("ears", ears)

@@ -577,6 +577,13 @@ private fun NameSection() {
             Prefs.agentName = name.trim(); Prefs.save()
             if (W.running) { W.stop(ctx); W.start(ctx) }
         }
+    var pers by remember { mutableStateOf(Prefs.personality) }
+    Label("Personalità")
+    OutlinedTextField(pers, { pers = it.take(1200) }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 5,
+        placeholder = { Text("Es. Sei simpatico e ironico, mi chiami capo e vai dritto al punto.", color = th.inkSoft) },
+        colors = OutlinedTextFieldDefaults.colors(focusedTextColor = th.ink, unfocusedTextColor = th.ink,
+            focusedBorderColor = Look.led, unfocusedBorderColor = th.inkSoft.copy(alpha = .4f), cursorColor = Look.led))
+    if (pers != Prefs.personality) SoftButton("Salva la personalità", Modifier.fillMaxWidth()) { Prefs.personality = pers.trim(); Prefs.save() }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("Ascolto sempre attivo", color = th.ink, fontWeight = FontWeight.SemiBold)

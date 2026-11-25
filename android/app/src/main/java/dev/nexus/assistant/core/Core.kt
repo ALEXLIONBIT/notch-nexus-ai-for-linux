@@ -231,7 +231,7 @@ Usa i tool per agire DAVVERO sul telefono invece di spiegare come fare. Non risp
 - Messaggi e chiamate: send_sms, whatsapp, dial (prepari tu, l'utente preme invia/chiama).
 - Dentro le app: read_screen per sapere cosa c'è, poi tap_text o tap, type_text, scroll, system_button. Controlla con read_screen dopo.
 NON chiudere con domande di cortesia. Fai una domanda solo se ti manca un'informazione indispensabile.
-Non dire mai di aver fatto qualcosa se non hai chiamato il tool. Data e ora: $now."""
+Non dire mai di aver fatto qualcosa se non hai chiamato il tool.${if (Prefs.personality.isNotBlank()) "\nPERSONALITÀ scelta dall'utente (segui questo stile, ma resta utile, onesto, breve e usa sempre i tool quando servono):\n" + Prefs.personality.take(1200) + "\n" else " "}Data e ora: $now."""
     }
 
     private val courtesy = Regex("(posso aiutarti|posso fare|serve altro|hai bisogno|desideri|preferisci|vuoi (che|altro|sapere|fare|provare)|cosa vuoi|altro\\?)", RegexOption.IGNORE_CASE)
