@@ -68,7 +68,19 @@ class BrowserMCP:
 
     @staticmethod
     def npx():
-        return shutil.which("npx.cmd" if IS_WIN else "npx") or shutil.which("npx")
+        found = shutil.which("npx.cmd" if IS_WIN else "npx") or shutil.which("npx")
+        if found:
+            return found
+        # NEXUS avviato come servizio o dal menu: il PATH può non avere Node (nvm, /usr/local, ~/.local)
+        import glob
+        from pathlib import Path
+        home = str(Path.home())
+        for pat in (home + "/.nvm/versions/node/*/bin/npx", "/usr/local/bin/npx", home + "/.local/bin/npx",
+                    home + "/.volta/bin/npx", "/opt/homebrew/bin/npx", r"C:\Program Files\nodejs\npx.cmd"):
+            hits = sorted(glob.glob(pat))
+            if hits:
+                return hits[-1]
+        return None
 
     def _cmd(self, *args):
         exe = self.npx()
@@ -113,6 +125,10 @@ class BrowserMCP:
             args += ["--executable-path", exe]
         self.status(state="starting", browser=name, text="Avvio Playwright…")
         kw = {"creationflags": NO_WINDOW} if IS_WIN else {"start_new_session": True}
+        import os
+        env = dict(os.environ)
+        env["PATH"] = os.path.dirname(self.npx()) + os.pathsep + env.get("PATH", "")   # anche node accanto a npx
+        kw["env"] = env
         self.proc = subprocess.Popen(self._cmd(*args), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=subprocess.DEVNULL, text=True, encoding="utf-8", cwd=str(out), **kw)
         with self._lock:
@@ -154,8 +170,62 @@ class BrowserMCP:
         self.status(state="off", browser="", text="Spento")
 
 
+_ORIGINAL = {}
+
+
+def _page_text(mcp, limit=3500):
+    """Titolo e contenuto della pagina aperta (dallo snapshot di Playwright), per far leggere il cervello."""
+    try:
+        snap = mcp.call("browser_snapshot", {})
+    except Exception as e:
+        return f"(non riesco a leggere la pagina: {e})"
+    import re
+    keep = []
+    for line in snap.splitlines():
+        t = line.strip()
+        # via le righe di sola struttura ("- generic [ref=e5]:", "- /url: /"): restano testi, link, titoli, campi
+        if re.fullmatch(r"-\s*(generic|group|list|listitem|region|navigation|main|banner|contentinfo|img|separator)(\s*\[[^\]]*\])*:?", t):
+            continue
+        if t.startswith("- /url:") or t.startswith("```"):
+            continue
+        keep.append(t[:300])
+    return "\n".join(keep)[:limit]
+
+
 def register(mcp, registry):
-    """Aggiunge gli strumenti di Playwright al registro dei tool del cervello."""
+    """Aggiunge gli strumenti di Playwright al registro dei tool del cervello; open_url e web_search
+    da qui in poi aprono la pagina nel browser pilotato (così il cervello la legge e può continuare)."""
+    import urllib.parse
+    label = {"firefox": "Firefox", "chrome": "Chrome", "msedge": "Edge"}.get(mcp.browser, mcp.browser.title())
+
+    def open_url(ctx, url):
+        if "://" not in url:
+            url = "https://" + url
+        ctx.step("🌐", f"Apro {url} in {label}")
+        r = mcp.call("browser_navigate", {"url": url})
+        if r.startswith("ERRORE"):
+            return r
+        return f"Ho aperto {url} in {label} (pilotato da te con i tool browser_*). Contenuto:\n" + _page_text(mcp)
+
+    def web_search(ctx, query):
+        ctx.step("🔎", f"Cerco: {query}")
+        url = "https://duckduckgo.com/?q=" + urllib.parse.quote(query)
+        r = mcp.call("browser_navigate", {"url": url})
+        if r.startswith("ERRORE"):
+            return r
+        return (f"Ho cercato '{query}' in {label}. Risultati (per aprirne uno usa browser_click con il ref):\n"
+                + _page_text(mcp, 4500))
+
+    for name, fn in (("open_url", open_url), ("web_search", web_search)):
+        if name in registry:
+            _ORIGINAL.setdefault(name, registry[name])
+            schema = dict(registry[name][1])
+            f = dict(schema["function"])
+            f["description"] = ("Apre un sito nel browser e ne legge il contenuto." if name == "open_url"
+                                else "Cerca sul web nel browser e legge i risultati.")
+            schema["function"] = f
+            registry[name] = (fn, schema)
+
     for t in mcp.tools:
         name = t["name"]
 
@@ -172,3 +242,6 @@ def register(mcp, registry):
 def unregister(registry):
     for k in [k for k in registry if k.startswith("browser_")]:
         registry.pop(k, None)
+    for name, orig in _ORIGINAL.items():          # open_url / web_search tornano ad aprire il browser normale
+        registry[name] = orig
+    _ORIGINAL.clear()
