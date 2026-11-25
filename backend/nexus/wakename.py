@@ -109,8 +109,10 @@ class NameSpotter:
             if self.model is None:
                 import os
                 from faster_whisper import WhisperModel
+                from .stt import ensure_model
                 size = self.cfg.get("wake_model") or "base"
-                self.model = WhisperModel(size, device="cpu", compute_type="int8", cpu_threads=min(4, os.cpu_count() or 2))
+                self.model = WhisperModel(ensure_model(size, lambda t, p=0: print(t.replace("riconoscimento vocale", "riconoscimento del nome"))),
+                                          device="cpu", compute_type="int8", cpu_threads=min(4, os.cpu_count() or 2))
                 print(f"riconoscimento del nome pronto (whisper {size})")
         if self.voice is None:
             try:

@@ -1,3 +1,5 @@
+**Novità 0.5.1** — Al primo avvio NEXUS scarica il riconoscimento vocale (Whisper, 1,6 GB): prima sembrava bloccato, ora nel notch compare l'avanzamento ("Scarico il riconoscimento vocale… 42% · 700 di 1600 MB"). I prossimi avvii sono immediati.
+
 **Novità 0.5.0**
 - **Personalità**: Personalizza → Ascolto → *Personalità*: scrivi come deve parlare (o tocca un esempio: Simpatico, Formale, Ironico, Coach, Pirata, Essenziale)
 - **Usa il browser al posto tuo** (Playwright): apre i siti, legge le pagine, clicca e compila i moduli nel tuo browser predefinito (Chrome, Edge, Brave, Chromium… o Firefox). Serve Node.js. Login e pagamenti li fai tu

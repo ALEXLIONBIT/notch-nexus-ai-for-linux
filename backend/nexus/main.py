@@ -59,7 +59,7 @@ class Nexus:
         self.ears = Ears(self.cfg, self.bus, self.on_wake)
         self.voice = Voice(self.cfg, self.bus, self.ears)
         self.set_state("loading", "Carico il riconoscimento vocale…")
-        self.stt = Stt(self.cfg)
+        self.stt = Stt(self.cfg, progress=lambda text, pct=-1: self.set_state("loading", text))
         self.brain = Brain(self.cfg, Tools(Ctx(self)), Ctx(self))
         if self.cfg.get("browser_mcp", True):
             threading.Thread(target=self.browser_start, daemon=True).start()

@@ -26,10 +26,51 @@ def _preload_cuda_libs():
                     pass
 
 
+def ensure_model(name, progress=None):
+    """Percorso del modello Whisper; se non è ancora sul PC lo scarica mostrando l'avanzamento
+    (la prima volta sono 1,6 GB: senza barra sembrava che NEXUS fosse bloccato)."""
+    import os
+    if os.path.isdir(str(name)):
+        return name
+    from faster_whisper.utils import _MODELS
+    from huggingface_hub import snapshot_download
+    repo = _MODELS.get(name, name)
+    try:
+        return snapshot_download(repo, local_files_only=True)
+    except Exception:
+        pass
+    if progress is None:
+        return name
+    from tqdm.auto import tqdm
+
+    import time as _t
+    state = {"big": 0, "t": 0.0}
+
+    class Bar(tqdm):
+        def __init__(self, *a, **k):
+            k["disable"] = False
+            super().__init__(*a, **k)
+
+        def update(self, n=1):
+            r = super().update(n)
+            tot = self.total or 0
+            if tot > 5_000_000:
+                state["big"] = max(state["big"], tot)
+            # segue solo la barra dei pesi (la più grande) e aggiorna al massimo una volta al secondo
+            if tot and tot == state["big"] and _t.time() - state["t"] > 1.0:
+                state["t"] = _t.time()
+                pct = min(99, int(self.n * 100 / tot))
+                progress(f"Scarico il riconoscimento vocale ({name})… {pct}% · {self.n / 1e6:.0f} di {tot / 1e6:.0f} MB", pct)
+            return r
+    progress(f"Scarico il riconoscimento vocale ({name})… una volta sola", 0)
+    return snapshot_download(repo, tqdm_class=Bar)
+
+
 class Stt:
     """Trascrizione locale (Whisper, caricato solo quando serve) o remota (API del provider)."""
-    def __init__(self, cfg):
+    def __init__(self, cfg, progress=None):
         self.cfg = cfg
+        self.progress = progress
         self.model = None
         self.device = "remoto"
         if cfg.get("stt_mode", "local") == "local":
@@ -43,7 +84,8 @@ class Stt:
     def _load_local(self):
         from faster_whisper import WhisperModel
         cfg = self.cfg
-        name = cfg["stt_model"]
+        name = ensure_model(cfg["stt_model"], self.progress)
+        label = cfg["stt_model"]
         self.model = None
         from .osys import IS_WIN
         # Windows: la GPU solo se scelta apposta (senza le DLL di cuDNN ctranslate2 chiude il programma)
@@ -62,7 +104,7 @@ class Stt:
         if self.model is None:
             self.model = WhisperModel(name, device="cpu", compute_type="int8", cpu_threads=max(2, (os.cpu_count() or 4) - 2))
             self.device = "cpu"
-        print(f"trascrittore pronto: {name} su {self.device}")
+        print(f"trascrittore pronto: {label} su {self.device}")
 
     def prompt(self):
         """Suggerimento per Whisper: le parole che l'utente usa davvero (app, TV, comandi)."""
