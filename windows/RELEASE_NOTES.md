@@ -1,3 +1,9 @@
+**Novità 0.5.0**
+- **Personalità**: Personalizza → Ascolto → *Personalità*: scrivi come deve parlare (o tocca un esempio: Simpatico, Formale, Ironico, Coach, Pirata, Essenziale)
+- **Usa il browser al posto tuo** (Playwright): apre i siti, legge le pagine, clicca e compila i moduli nel tuo browser predefinito (Chrome, Edge, Brave, Chromium… o Firefox). Serve Node.js. Login e pagamenti li fai tu
+- **Ehi <nome> sistemato**: il saluto è obbligatorio ("robot" da solo o "il robot è rotto" non lo svegliano più) e capisce anche la pronuncia italiana "ehirobot". Nuovo: **La tua voce** → registra "Ehi <nome>" 3 volte e ti riconosce dal suono
+- Trascrizione **Massima** (large-v3) per chi vuole meno parole sbagliate
+
 **Novità 0.4.1** — *Ehi <nome>* non si attiva più da solo con rumori, silenzio o discorsi normali; aggiungendo un cervello con chiave API l'elenco dei modelli disponibili compare da solo (scrivi per cercare) e *Prova* ti suggerisce il nome giusto; in Aggiornamenti c'è il pulsante **Riavvia**.
 
 **Novità 0.4.0** — **Dagli il nome che vuoi**: Personalizza → Ascolto → *Come si chiama* (es. Marco) e scegli *Ehi Marco* come parola per svegliarlo. Puoi anche dire tutto di fila: “Marco, che tempo fa domani?”. Si presenta col suo nome. La prima volta scarica un piccolo modello (75 MB).

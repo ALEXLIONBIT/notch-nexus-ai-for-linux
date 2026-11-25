@@ -14,3 +14,4 @@ android/tsbridge/*.aar
 **/build/
 linux/dist/
 linux/build/
+.playwright-mcp/

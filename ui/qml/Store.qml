@@ -36,7 +36,9 @@ Item {
     property string appVersion: ""
     property var setup: ({ text: "", pct: -1, done: false, error: "", working: false })
     property var perms: ({ uinput: true, mic: true, ocr: true, pkexec: true, text: "", ok: true })
-    property bool permsSeen: false       // primo avvio su Linux: passo "Permessi" già visto
+    property bool permsSeen: false
+    property var browserMcp: ({ state: "off", browser: "", text: "" })
+    property var wakeVoice: ({ ready: false, step: 0, text: "" })   // la tua voce come parola di attivazione       // primo avvio su Linux: passo "Permessi" già visto
     property var tailscale: ({ installed: false, state: "", ip: "", name: "", text: "", error: "", working: false })
     property bool connected: nexus.connected
     property bool fullscreen: false
@@ -216,6 +218,8 @@ Item {
             case "image": store.image = "file:///" + d.path.replace(/\\/g, "/").replace(/^\/+/, "") + "?t=" + Date.now(); break
             case "tailscale": store.tailscale = d; break
             case "perms": store.perms = d; break
+            case "wake_voice": store.wakeVoice = d; break
+            case "browser_mcp": store.browserMcp = d; break
             case "platform": store.platform = d.os; store.appVersion = d.version || ""; break
             case "setup_status":
                 store.setup = { text: d.text, pct: d.pct, done: d.done, error: d.error, working: !d.done && !d.error }

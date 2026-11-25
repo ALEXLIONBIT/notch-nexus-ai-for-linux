@@ -241,6 +241,19 @@ Rectangle {
                 current: panel.cfg.browser || ""
                 onPicked: v => panel.sendCfg("browser", v)
             }
+            Heading { text: "Usare il browser al posto tuo (Playwright)" }
+            Chips {
+                options: ["on", "off"]; labels: ["Attivo", "Spento"]
+                current: (panel.cfg.browser_mcp ?? true) ? "on" : "off"
+                onPicked: v => panel.s.send("browser_mcp", { on: v === "on" })
+            }
+            Text {
+                Layout.preferredWidth: col.width; wrapMode: Text.Wrap
+                text: (panel.s.browserMcp.text || "Apre i siti, legge le pagine, clicca e compila i moduli nel browser predefinito (Chrome, Firefox, Edge, Brave…).")
+                      + (panel.s.browserMcp.state === "ready" ? "" : "\nServe Node.js. Login e pagamenti li fai tu nella finestra.")
+                color: panel.s.browserMcp.state === "error" ? "#ff5a6e" : panel.s.inkSoft
+                font { family: panel.s.sansFamily; pixelSize: 11 }
+            }
 
             // ---------- voce ----------
             Section { text: "Voce" }
@@ -280,6 +293,45 @@ Rectangle {
                 background: Rectangle { implicitHeight: 38; radius: 19; color: panel.chip }
                 onEditingFinished: if (text.trim() && text.trim() !== panel.cfg.agent_name) panel.sendCfg("agent_name", text.trim())
             }
+            Heading { text: "Personalità" }
+            Text {
+                Layout.preferredWidth: col.width; wrapMode: Text.Wrap
+                text: "Come deve parlare e comportarsi. Scrivi quello che vuoi oppure parti da un esempio."
+                color: panel.s.inkSoft; font { family: panel.s.sansFamily; pixelSize: 11 }
+            }
+            Flow {
+                Layout.preferredWidth: col.width; spacing: 6
+                Repeater {
+                    model: [
+                        { l: "Simpatico", t: "Sei simpatico e solare, fai qualche battuta leggera ma vai dritto al punto." },
+                        { l: "Formale", t: "Sei formale ed educato: dai del Lei, frasi precise e misurate, niente battute." },
+                        { l: "Ironico", t: "Sei ironico e un po' sarcastico, con humor asciutto, ma sempre gentile e utile." },
+                        { l: "Coach", t: "Sei un coach motivante: incoraggi, dai energia e spingi a fare le cose subito." },
+                        { l: "Pirata", t: "Parli come un vecchio pirata di mare (\"arrr\", \"ciurma\", \"capitano\"), ma le informazioni restano giuste." },
+                        { l: "Essenziale", t: "Rispondi con il minimo di parole possibile, solo l'essenziale." }
+                    ]
+                    IconButton { text: modelData.l; size: 28; tint: panel.s.ink; fill: panel.chip
+                        onClicked: { persona.text = modelData.t; panel.sendCfg("personality", modelData.t) } }
+                }
+            }
+            ScrollView {
+                Layout.preferredWidth: col.width; Layout.preferredHeight: 92
+                TextArea {
+                    id: persona
+                    text: panel.cfg.personality || ""
+                    placeholderText: "Es. Sei un robot gentile e spiritoso, mi chiami capo e mi dai consigli pratici."
+                    wrapMode: TextArea.Wrap
+                    color: panel.s.ink; placeholderTextColor: panel.s.inkSoft
+                    font { family: panel.s.sansFamily; pixelSize: 13 }
+                    background: Rectangle { radius: 14; color: panel.chip }
+                    padding: 10
+                }
+            }
+            IconButton {
+                visible: persona.text !== (panel.cfg.personality || "")
+                text: "Salva la personalità"; size: 32; tint: "#0b1015"; fill: panel.s.led
+                onClicked: panel.sendCfg("personality", persona.text.trim())
+            }
             Heading { text: "Parola per svegliarlo" }
             Chips {
                 options: ["name", "hey_jarvis", "alexa", "hey_mycroft"]
@@ -289,9 +341,44 @@ Rectangle {
             Text {
                 visible: panel.cfg.wake_word === "name"
                 Layout.preferredWidth: col.width; wrapMode: Text.Wrap
-                text: "Chiamalo per nome: “Ehi " + (panel.cfg.agent_name || "Nexus") + "” oppure tutto di fila, “"
-                      + (panel.cfg.agent_name || "Nexus") + ", che tempo fa domani?”. La prima volta scarica un piccolo modello (75 MB)."
+                text: "Chiamalo col saluto davanti: “Ehi " + (panel.cfg.agent_name || "Nexus") + "” o “Hey " + (panel.cfg.agent_name || "Nexus")
+                      + "”, anche di fila: “Ehi " + (panel.cfg.agent_name || "Nexus") + ", che tempo fa?”. Il nome da solo, o “il "
+                      + (panel.cfg.agent_name || "Nexus") + "” in un discorso, non lo svegliano."
                 color: panel.s.inkSoft; font { family: panel.s.sansFamily; pixelSize: 11 }
+            }
+            // la tua voce: NEXUS riconosce il suono, non il testo (capisce anche la pronuncia italiana)
+            Rectangle {
+                visible: panel.cfg.wake_word === "name"
+                Layout.preferredWidth: col.width; implicitHeight: voiceCol.implicitHeight + 24
+                radius: 16; color: panel.chip
+                Component.onCompleted: panel.s.send("wake_voice_status")
+                ColumnLayout {
+                    id: voiceCol
+                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 12 }
+                    spacing: 6
+                    Text { text: "La tua voce " + (panel.s.wakeVoice.ready ? "✓" : "(consigliato)"); color: panel.s.ink
+                           font { family: panel.s.sansFamily; pixelSize: 13; weight: Font.Bold } }
+                    Text {
+                        Layout.fillWidth: true; wrapMode: Text.Wrap
+                        text: panel.s.wakeVoice.text !== "" ? panel.s.wakeVoice.text
+                            : panel.s.wakeVoice.ready ? "Ti riconosco dal suono della tua voce: funziona anche con la pronuncia italiana."
+                            : "Registra “Ehi " + (panel.cfg.agent_name || "Nexus") + "” 3 volte con la tua voce: lo riconosco dal suono, molto meglio che dal testo. Resta solo su questo PC."
+                        color: panel.s.wakeVoice.step > 0 ? panel.s.led : panel.s.inkSoft
+                        font { family: panel.s.sansFamily; pixelSize: 11; weight: panel.s.wakeVoice.step > 0 ? Font.Bold : Font.Normal }
+                    }
+                    RowLayout {
+                        spacing: 8
+                        IconButton { text: panel.s.wakeVoice.ready ? "Registra di nuovo" : "Registra"; size: 32; tint: "#0b1015"; fill: panel.s.led
+                            enabled: panel.s.wakeVoice.step === 0; onClicked: panel.s.send("wake_record") }
+                        IconButton { visible: panel.s.wakeVoice.ready; text: "Cancella"; size: 32; tint: panel.s.ink; fill: panel.chipOn
+                            onClicked: panel.s.send("wake_clear") }
+                    }
+                    Chips {
+                        visible: panel.s.wakeVoice.ready
+                        options: ["normal", "high"]; labels: ["Sensibilità normale", "Alta (se a volte non mi sente)"]
+                        current: panel.cfg.wake_sensitivity || "normal"; onPicked: v => panel.sendCfg("wake_sensitivity", v)
+                    }
+                }
             }
             Chips {
                 options: ["on", "off"]; labels: ["Ascolto sempre attivo", "Solo col pulsante"]
@@ -465,12 +552,14 @@ Rectangle {
             // ---------- trascrizione ----------
             Section { text: "Trascrizione" }
             Chips {
-                options: ["turbo", "small", "remote"]
-                labels: ["Su questo PC, precisa", "Su questo PC, leggera", "Online (API)"]
-                current: panel.cfg.stt_mode === "remote" ? "remote" : (panel.cfg.stt_model === "small" ? "small" : "turbo")
+                options: ["large", "turbo", "small", "remote"]
+                labels: ["Massima (più lenta)", "Precisa", "Leggera", "Online (API)"]
+                current: panel.cfg.stt_mode === "remote" ? "remote"
+                       : panel.cfg.stt_model === "small" ? "small" : panel.cfg.stt_model === "large-v3" ? "large" : "turbo"
                 onPicked: v => {
                     if (v === "remote") panel.s.send("config", { config: { stt_mode: "remote" } })
-                    else panel.s.send("config", { config: { stt_mode: "local", stt_model: v === "small" ? "small" : "large-v3-turbo" } })
+                    else panel.s.send("config", { config: { stt_mode: "local",
+                        stt_model: v === "small" ? "small" : v === "large" ? "large-v3" : "large-v3-turbo" } })
                 }
             }
             Text {

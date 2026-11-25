@@ -55,6 +55,15 @@ def drop_courtesy(reply):
 from .providers import Cancelled, make as make_provider  # noqa: E402
 
 
+
+def personality_text(p):
+    """La personalità scritta dall'utente (Personalizza → Personalità): cambia il modo di parlare, non le regole."""
+    p = (p or "").strip()[:1200]
+    if not p:
+        return ""
+    return ("\n\nPERSONALITÀ scelta dall'utente (segui questo stile in ogni risposta, ma resta sempre utile, onesto, "
+            "in italiano, breve perché le risposte sono lette a voce, e non smettere mai di usare i tool quando servono):\n" + p)
+
 class Brain:
     def __init__(self, cfg, tools, ctx):
         self.cfg, self.tools, self.ctx = cfg, tools, ctx
@@ -126,8 +135,15 @@ class Brain:
         self.last = time.time()
         now = datetime.now().strftime("%A %d %B %Y, %H:%M")
         from .osys import os_name
-        msgs = [{"role": "system", "content": SYSTEM.format(
-            now=now, os=os_name(), name=(self.cfg.get("agent_name") or "Nexus").strip(), owner=f"di {self.cfg['user_name']}" if self.cfg.get("user_name") else "dell'utente")}, *self.history,
+        system = SYSTEM.format(
+            now=now, os=os_name(), name=(self.cfg.get("agent_name") or "Nexus").strip(),
+            owner=f"di {self.cfg['user_name']}" if self.cfg.get("user_name") else "dell'utente")
+        system += personality_text(self.cfg.get("personality", ""))
+        from .tools import REGISTRY
+        if "browser_navigate" in REGISTRY:
+            from .browsermcp import GUIDE
+            system += GUIDE
+        msgs = [{"role": "system", "content": system}, *self.history,
                 {"role": "user", "content": user_text}]
         reply = "Ho fatto troppi passaggi senza finire, riprova con una richiesta più semplice."
         used_tools, nudged = False, False

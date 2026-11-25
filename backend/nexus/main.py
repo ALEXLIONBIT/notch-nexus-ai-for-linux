@@ -44,6 +44,8 @@ class Nexus:
         self.stopped = False
         self.ears = self.voice = self.stt = self.brain = None
         self.chat = None                       # chat in corso (vedi chats.py)
+        self.bmcp = None                       # Playwright MCP (browsermcp.py)
+        self.bmcp_status = {"state": "off", "browser": "", "text": ""}
 
     # ---------- avvio ----------
     def start(self):
@@ -59,6 +61,8 @@ class Nexus:
         self.set_state("loading", "Carico il riconoscimento vocale…")
         self.stt = Stt(self.cfg)
         self.brain = Brain(self.cfg, Tools(Ctx(self)), Ctx(self))
+        if self.cfg.get("browser_mcp", True):
+            threading.Thread(target=self.browser_start, daemon=True).start()
         self.ears.start()
         try:                                    # porta per telefono/tablet (cervello + immagini)
             from . import gateway
@@ -93,6 +97,7 @@ class Nexus:
         self.bus.emit("config", config=self.cfg.public())
         self.bus.emit("state", state=self.state, detail=getattr(self, "detail", ""))
         self._emit_chat()
+        self.bus.emit("browser_mcp", **self.bmcp_status)
 
     # ---------- comandi dalla UI ----------
     def on_command(self, msg):
@@ -120,6 +125,24 @@ class Nexus:
             self.apply_config(msg.get("config", {}))
         elif t == "update_check":
             threading.Thread(target=self.update_check, daemon=True).start()
+        elif t == "browser_mcp":
+            self.cfg["browser_mcp"] = bool(msg.get("on"))
+            self.cfg.save()
+            self.bus.emit("config", config=self.cfg.public())
+            threading.Thread(target=self.browser_start if msg.get("on") else self.browser_stop, daemon=True).start()
+        elif t == "wake_record":
+            threading.Thread(target=self.wake_record, daemon=True).start()
+        elif t == "wake_clear":
+            sp = self.ears.spotter if self.ears else None
+            if sp is not None and sp.voice is not None:
+                sp.voice.clear()
+            else:
+                from .wakevoice import VoiceMatcher
+                VoiceMatcher().clear()
+            self.bus.emit("wake_voice", ready=False, step=0, text="Registrazione cancellata.")
+        elif t == "wake_voice_status":
+            from .wakevoice import DIR
+            self.bus.emit("wake_voice", ready=len(list(DIR.glob("clip*.npy"))) >= 2 if DIR.exists() else False, step=0, text="")
         elif t == "perms_status":
             from . import perms
             self.bus.emit("perms", **perms.status(self.ears), text="")
@@ -178,6 +201,8 @@ class Nexus:
             self.voice.load()
         if self.ears and old["wake_word"] != self.cfg["wake_word"]:
             self.ears.load_wakeword()
+        if old.get("browser") != self.cfg.get("browser") and self.bmcp is not None:
+            threading.Thread(target=self.browser_start, daemon=True).start()     # altro browser: riparte con quello
         if self.brain and old.get("agent_name") != self.cfg.get("agent_name"):
             self.brain.history = []            # nuovo nome: la memoria breve riparte
         self.bus.emit("config", config=self.cfg.public())
@@ -365,6 +390,67 @@ class Nexus:
             pass
 
     # ---------- provider ----------
+    # ---------- Playwright MCP: il browser vero ----------
+    def _bmcp_status(self, **k):
+        self.bmcp_status = {"state": k.get("state", ""), "browser": k.get("browser", ""), "text": k.get("text", "")}
+        self.bus.emit("browser_mcp", **self.bmcp_status)
+
+    def browser_start(self):
+        from .browsermcp import BrowserMCP, register
+        from .tools import REGISTRY
+        self.browser_stop(quiet=True)
+        try:
+            self.bmcp = BrowserMCP(self.cfg, status=self._bmcp_status)
+            if self.bmcp.start():
+                register(self.bmcp, REGISTRY)
+        except Exception as e:
+            print("Playwright MCP:", e)
+            self._bmcp_status(state="error", browser="", text=f"Playwright non partito: {str(e)[:140]}")
+
+    def browser_stop(self, quiet=False):
+        from .browsermcp import unregister
+        from .tools import REGISTRY
+        unregister(REGISTRY)
+        if self.bmcp:
+            self.bmcp.stop()
+            self.bmcp = None
+        elif not quiet:
+            self._bmcp_status(state="off", browser="", text="Spento")
+
+    # ---------- la tua voce come parola di attivazione ----------
+    def wake_record(self):
+        """Registra "Ehi <nome>" tre volte: poi NEXUS ti riconosce dal suono della voce."""
+        from .wakevoice import VoiceMatcher
+        if not self.ears or self.ears.stream is None:
+            self.bus.emit("wake_voice", ready=False, step=0, text="Non trovo il microfono.")
+            return
+        name = self.cfg.get("agent_name") or "Nexus"
+        clips = []
+        tries = 0
+        while len(clips) < 3 and tries < 6:
+            tries += 1
+            self.bus.emit("wake_voice", ready=False, step=len(clips) + 1,
+                          text=f"Di' “Ehi {name}” ({len(clips) + 1} di 3)…")
+            self.set_state("listening", f"Di' “Ehi {name}”")
+            self.voice.beep("wake")
+            a = self.ears.record(wait=4.0, silence=0.5, max_s=4.0)
+            if a is None or not 0.35 <= len(a) / 16000 <= 4.0:
+                self.bus.emit("wake_voice", ready=False, step=len(clips) + 1, text="Non ti ho sentito, riprova.")
+                time.sleep(1.0)
+                continue
+            clips.append(a)
+            time.sleep(0.5)
+        self.set_state("idle", self._idle_text())
+        if len(clips) < 3:
+            self.bus.emit("wake_voice", ready=False, step=0, text="Registrazione non completata: riprova.")
+            return
+        sp = self.ears.spotter
+        vm = sp.voice if sp is not None and sp.voice is not None else VoiceMatcher()
+        vm.save(clips)
+        if sp is not None:
+            sp.voice = vm
+        self.bus.emit("wake_voice", ready=True, step=0, text=f"Fatto: ora ti riconosco quando dici “Ehi {name}”.")
+
     # ---------- chat salvate ----------
     def _current_chat(self):
         """La chat in corso; dopo una pausa più lunga della memoria del cervello ne comincia una nuova."""
@@ -527,16 +613,18 @@ class Nexus:
             return self._spawn(text.strip())
 
         def precise():
-            # Whisper tiny riconosce il nome ma sbaglia il resto: la domanda la ritrascrive quello principale
+            # il riconoscimento del nome sbaglia il resto: la domanda la ritrascrive quello principale
             from .wakename import match
-            q = text.strip()
+            q = None if text.strip() == "…" else text.strip()
             try:
                 full = self.stt.transcribe(audio)
                 ok, rest = match(full, self.cfg.get("agent_name") or "Nexus")
                 if ok and len(rest) > 2:
                     q = rest
-                elif len(full.split()) > len(q.split()):
-                    q = full
+                elif q is None:
+                    # svegliato dalla voce: il nome è all'inizio ma trascritto storto ("Eto bot accendi la luce")
+                    w = full.split()
+                    q = " ".join(w[2:]) if len(w) > 3 else None
             except Exception as e:
                 print("trascrizione della domanda:", e)
             self._spawn(q)
