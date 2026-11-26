@@ -11,6 +11,7 @@ Item {
     readonly property var s: store
     readonly property bool busy: (s.st !== "idle" && s.st !== "loading") || s.confirmText !== "" || s.saying
     property bool pinned: false
+    property var files: []          // allegati incollati (Ctrl+V) o trascinati, inviati con il prossimo messaggio
     // si apre solo se resti sopra la pillola per un attimo (niente aperture per sbaglio)
     property bool hoverOpen: false
     readonly property bool expanded: hoverOpen || busy || pinned || input.activeFocus
@@ -165,12 +166,20 @@ Item {
                 lineHeight: 1.15
                 Layout.fillWidth: true
             }
-            Text {
+            RowLayout {
                 visible: notch.s.sayText === "" && notch.s.reply !== ""
-                text: notch.s.reply
-                color: "#e9eef3"; font { family: notch.s.sansFamily; pixelSize: 15 }
-                wrapMode: Text.Wrap; Layout.fillWidth: true; maximumLineCount: 4; elide: Text.ElideRight
-                lineHeight: 1.15
+                Layout.fillWidth: true
+                spacing: 8
+                TextEdit {   // selezionabile: Ctrl+C copia la parte scelta
+                    text: notch.s.reply
+                    readOnly: true; selectByMouse: true
+                    color: "#e9eef3"; selectionColor: Qt.rgba(notch.s.led.r, notch.s.led.g, notch.s.led.b, 0.45)
+                    font { family: notch.s.sansFamily; pixelSize: 15 }
+                    wrapMode: Text.Wrap; Layout.fillWidth: true
+                    Layout.maximumHeight: 96; clip: true
+                }
+                IconButton { glyph: "copy"; size: 28; tint: "#9aa5b1"; tip: "Copia la risposta"
+                    Layout.alignment: Qt.AlignTop; onClicked: notch.s.copy(notch.s.reply) }
             }
 
             // passi + screenshot
@@ -214,6 +223,41 @@ Item {
                 }
             }
 
+            // più compiti insieme: quale desktop, a che punto, ✕ per fermarne uno
+            Column {
+                visible: notch.s.tasks.length > 1 || (notch.s.tasks.length === 1 && notch.s.tasks[0].waiting !== "")
+                Layout.fillWidth: true
+                spacing: 2
+                Repeater {
+                    model: notch.s.tasks
+                    RowLayout {
+                        required property var modelData
+                        width: parent.width
+                        spacing: 8
+                        Rectangle {
+                            width: 22; height: 18; radius: 6
+                            color: parent.modelData.desktop === notch.s.curDesktop ? Qt.rgba(notch.s.led.r, notch.s.led.g, notch.s.led.b, 0.25) : "#1c232c"
+                            Text { anchors.centerIn: parent; text: parent.parent.modelData.desktop ? "D" + parent.parent.modelData.desktop : "•"
+                                   color: "#dfe6ec"; font { family: notch.s.sansFamily; pixelSize: 10; weight: Font.Bold } }
+                        }
+                        Text {
+                            text: parent.modelData.text || "Ti ascolto…"
+                            color: "#c9d1da"; elide: Text.ElideRight; Layout.fillWidth: true
+                            font { family: notch.s.sansFamily; pixelSize: 12 }
+                        }
+                        Text {
+                            text: parent.modelData.waiting === "desktop" ? "aspetta il suo desktop"
+                                : parent.modelData.waiting === "other" ? "in coda" : (parent.modelData.step || "…")
+                            color: parent.modelData.waiting !== "" ? notch.s.thinkAmber : "#6e7984"
+                            elide: Text.ElideRight; Layout.maximumWidth: 210
+                            font { family: notch.s.sansFamily; pixelSize: 11 }
+                        }
+                        IconButton { glyph: "close"; size: 22; tint: "#e8edf2"; tip: "Ferma questo compito"
+                            onClicked: notch.s.send("task_stop", { id: parent.modelData.id }) }
+                    }
+                }
+            }
+
             // conferma
             RowLayout {
                 visible: notch.s.confirmText !== ""
@@ -230,7 +274,19 @@ Item {
                     onClicked: notch.s.send("confirm", { id: notch.s.confirmId, ok: false }) }
             }
 
-            // scrivi a NEXUS
+            // allegati in attesa + avviso "Copiato"
+            Attachments {
+                Layout.fillWidth: true
+                files: notch.files; family: notch.s.sansFamily
+                onRemoved: i => { var f = notch.files.slice(); f.splice(i, 1); notch.files = f }
+            }
+            Text {
+                visible: notch.s.toastText !== ""
+                text: "✓ " + notch.s.toastText
+                color: notch.s.led; font { family: notch.s.sansFamily; pixelSize: 12; weight: Font.Bold }
+            }
+
+            // scrivi a NEXUS (Ctrl+V incolla anche immagini e file, Ctrl+C senza selezione copia la risposta)
             TextField {
                 id: input
                 Layout.fillWidth: true
@@ -244,11 +300,28 @@ Item {
                     color: "#131920"
                     border.color: input.activeFocus ? Qt.rgba(notch.s.led.r, notch.s.led.g, notch.s.led.b, 0.6) : "#1e252e"
                 }
-                onAccepted: { if (text.trim()) notch.s.send("text", { text: text }); text = "" }
+                Keys.onPressed: event => {
+                    if (!(event.modifiers & Qt.ControlModifier)) return
+                    if (event.key === Qt.Key_V) {
+                        var f = notch.s.pasteFiles()
+                        if (f.length) { notch.files = notch.files.concat(f); event.accepted = true }
+                    } else if (event.key === Qt.Key_C && input.selectedText === "" && notch.s.reply !== "") {
+                        notch.s.copy(notch.s.reply); event.accepted = true
+                    }
+                }
+                onAccepted: {
+                    if (text.trim() || notch.files.length)
+                        notch.s.send("text", { text: text.trim(), files: notch.files })
+                    text = ""; notch.files = []
+                }
+                DropArea {
+                    anchors.fill: parent
+                    onDropped: drop => { if (drop.hasUrls) notch.files = notch.files.concat(clip.localFiles(drop.urls)) }
+                }
                 IconButton {
                     anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 5 }
-                    glyph: "send"; size: 30; tint: input.text ? "#0b1015" : "#56606b"
-                    fill: input.text ? notch.s.led : "transparent"
+                    glyph: "send"; size: 30; tint: (input.text || notch.files.length) ? "#0b1015" : "#56606b"
+                    fill: (input.text || notch.files.length) ? notch.s.led : "transparent"
                     onClicked: input.accepted()
                 }
             }

@@ -11,6 +11,8 @@ import uuid
 from .config import Config
 from .bus import Bus
 from .osys import IS_WIN, FROZEN, PACKAGED, APPIMAGE, RELEASE_PREFIX
+from . import desktops
+from . import tasks as T
 
 RELEASES = "https://api.github.com/repos/ALEXLIONBIT/notch-nexus-ai-for-linux/releases"
 
@@ -18,30 +20,47 @@ YES = re.compile(r"\b(s[iì]|ok|okay|certo|vai|procedi|conferm|fallo|esatto|d'ac
 NO = re.compile(r"\b(no|annulla|ferma|stop|lascia|non farlo|aspetta)\b", re.I)
 
 
+IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+BLIND = {"click", "drag", "move_mouse", "type_text", "press_keys"}   # azioni alla cieca su uno schermo forse cambiato
+
+
 class Ctx:
-    """Quello che i tool vedono: passi nel notch, immagini, conferme."""
-    def __init__(self, nexus):
+    """Quello che i tool vedono: passi nel notch, immagini, conferme. Con `task` è quello di un compito."""
+    def __init__(self, nexus, task=None):
         self.n = nexus
         self.cfg = nexus.cfg
+        self.task = task
 
     def step(self, icon, text):
+        if self.task is not None:
+            return self.n.task_step(self.task, icon, text)
         self.n.bus.emit("step", icon=icon, text=text)
 
     def image(self, path):
         self.n.bus.emit("image", path=path)
 
     def confirm(self, question):
-        return self.n.confirm(question)
+        return self.n.confirm(question, self.task)
+
+    def before_tool(self, name, args):
+        return self.n.before_tool(self.task, name, args) if self.task is not None else ""
 
 
 class Nexus:
     def __init__(self):
         self.cfg = Config()
         self.bus = Bus(self.cfg["host"], self.cfg["port"], self.on_command, self.on_connect)
-        self.busy = threading.Lock()
         self.state = "loading"
         self.pending = {}
-        self.stopped = False
+        self.tasks = {}                        # compiti in corso (anche più di uno: vedi tasks.py)
+        self.tasks_lock = threading.RLock()
+        self.lanes = {}                        # memoria breve del cervello, una per desktop virtuale
+        self.hands = T.Hands()                 # schermo/mouse/browser: un compito alla volta
+        self.mic = threading.Lock()            # il microfono: un ascolto alla volta
+        self.speech = threading.Lock()         # la voce: una risposta alla volta, le altre in coda
+        self.speaking_task = None
+        self.confirm_lock = threading.Lock()   # le domande sì/no: una alla volta
+        self.chat_lock = threading.Lock()
         self.ears = self.voice = self.stt = self.brain = None
         self.chat = None                       # chat in corso (vedi chats.py)
         self.bmcp = None                       # Playwright MCP (browsermcp.py)
@@ -49,6 +68,9 @@ class Nexus:
 
     # ---------- avvio ----------
     def start(self):
+        if not IS_WIN:
+            from .osys import fix_gui_env
+            fix_gui_env()
         self.bus.start()
         self.set_state("loading", "Carico i moduli…")
         from .audio import Ears
@@ -104,8 +126,14 @@ class Nexus:
         t = msg.get("type")
         if t == "listen":
             self.on_wake()
-        elif t == "text" and msg.get("text", "").strip():
-            self._spawn(msg["text"].strip())
+        elif t == "text" and (msg.get("text", "").strip() or msg.get("files")):
+            self._spawn(msg.get("text", "").strip(), files=msg.get("files") or [])
+        elif t == "task_stop":
+            with self.tasks_lock:
+                task = self.tasks.get(msg.get("id"))
+            if task is not None:
+                self.cancel_task(task)
+                self._settle()
         elif t == "confirm":
             p = self.pending.get(msg.get("id"))
             if p and not p["ev"].is_set():
@@ -172,20 +200,49 @@ class Nexus:
             threading.Thread(target=self.provider_command, args=(t, msg), daemon=True).start()
 
     def stop(self):
-        """Ferma TUTTO subito: voce, ascolto, ragionamento, conferme."""
-        self.stopped = True
-        if self.voice:
-            self.voice.stop()
-        if self.brain:
-            self.brain.cancelled = True
+        """Tasto Ferma: ferma TUTTO subito (voce, ascolto, tutti i compiti, conferme)."""
+        self.stop_command("tutto")
         if self.ears:
             self.ears.cancel()
         for p in list(self.pending.values()):
             p["ok"] = False
             p["ev"].set()
+
+    def stop_command(self, text="", skip=None):
+        """"Ehi Nexus basta": zitto subito e ferma il compito del desktop dove sei
+        (se stava solo parlando, smette di parlare); "basta tutto" ferma tutti i compiti."""
+        everything = bool(T.ALL.search(text or ""))
+        talking = self.speaking_task if self.speech.locked() else None
+        if self.voice:
+            self.voice.stop()
         self.bus.emit("say", text="", dur=0, first=True, last=True)
-        if self.busy.locked():
-            self.set_state("idle", "Fermato")
+        cur = desktops.current()
+        with self.tasks_lock:
+            live = [t for t in self.tasks.values() if not t.cancelled and t is not skip]
+        if everything:
+            targets = live
+        else:
+            targets = [t for t in live if not t.desktop or not cur or t.desktop == cur]
+            if talking is not None and talking in live and talking not in targets:
+                targets.append(talking)
+            if not targets and talking is None:
+                targets = live[-1:]                   # niente qui e non parlava: il compito più recente
+        for t in targets:
+            self.cancel_task(t)
+        print("basta:", ", ".join(f"«{t.text[:40]}»" for t in targets) or "solo la voce")
+        self._settle()
+
+    def cancel_task(self, task):
+        task.cancelled = True
+        for p in list(self.pending.values()):
+            if p.get("task") is task:
+                p["ok"] = False
+                p["ev"].set()
+        if task.listening and self.ears:
+            self.ears.cancel()
+        if self.speaking_task is task and self.voice:
+            self.voice.stop()
+        self.task_step(task, "■", "Fermato")
 
     def apply_config(self, new):
         old = dict(self.cfg)
@@ -203,8 +260,9 @@ class Nexus:
             self.ears.load_wakeword()
         if old.get("browser") != self.cfg.get("browser") and self.bmcp is not None:
             threading.Thread(target=self.browser_start, daemon=True).start()     # altro browser: riparte con quello
-        if self.brain and old.get("agent_name") != self.cfg.get("agent_name"):
-            self.brain.history = []            # nuovo nome: la memoria breve riparte
+        if old.get("agent_name") != self.cfg.get("agent_name"):
+            for lane in self.lanes.values():   # nuovo nome: la memoria breve riparte
+                lane["history"] = []
         self.bus.emit("config", config=self.cfg.public())
         if self.state == "idle":
             self.set_state("idle", self._idle_text())
@@ -377,12 +435,12 @@ class Nexus:
                           f"(pkill -f 'nexus.main'; pkill -f 'ui/app.py'; setsid {ROOT}/scripts/nexus >/dev/null 2>&1 &)"],
                          start_new_session=True)
 
-    def log_chat(self, text, reply, seconds):
+    def log_chat(self, text, reply, seconds, task=None):
         """Registro locale delle conversazioni (~/.local/share/nexus/chats.jsonl), utile per capire cosa migliorare."""
         from .config import DATA
         rec = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "user": text, "reply": reply,
                "seconds": round(seconds, 1), "model": self.cfg.active_provider().get("model"),
-               "steps": getattr(self.brain, "log_steps", [])}
+               "steps": getattr(task, "log_steps", [])}
         try:
             with open(DATA / "chats.jsonl", "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -420,11 +478,20 @@ class Nexus:
     # ---------- la tua voce come parola di attivazione ----------
     def wake_record(self):
         """Registra "Ehi <nome>" tre volte: poi NEXUS ti riconosce dal suono della voce."""
-        from .wakevoice import VoiceMatcher
         if not self.ears or self.ears.stream is None:
             self.bus.emit("wake_voice", ready=False, step=0, text="Non trovo il microfono.")
             return
         name = self.cfg.get("agent_name") or "Nexus"
+        if not self.mic.acquire(timeout=10):
+            self.bus.emit("wake_voice", ready=False, step=0, text="Sto già ascoltando: riprova tra poco.")
+            return
+        try:
+            clips = self._wake_clips(name)
+        finally:
+            self.mic.release()
+        self._wake_save(name, clips)
+
+    def _wake_clips(self, name):
         clips = []
         tries = 0
         while len(clips) < 3 and tries < 6:
@@ -441,6 +508,10 @@ class Nexus:
             clips.append(a)
             time.sleep(0.5)
         self.set_state("idle", self._idle_text())
+        return clips
+
+    def _wake_save(self, name, clips):
+        from .wakevoice import VoiceMatcher
         if len(clips) < 3:
             self.bus.emit("wake_voice", ready=False, step=0, text="Registrazione non completata: riprova.")
             return
@@ -452,22 +523,27 @@ class Nexus:
         self.bus.emit("wake_voice", ready=True, step=0, text=f"Fatto: ora ti riconosco quando dici “Ehi {name}”.")
 
     # ---------- chat salvate ----------
+    def _lane(self, desk=None):
+        """Memoria breve del cervello per un desktop virtuale (0 = desktop unico / non si sa)."""
+        if desk is None:
+            desk = desktops.current()
+        return self.lanes.setdefault(desk or 0, {"history": [], "last": 0.0})
+
     def _current_chat(self):
         """La chat in corso; dopo una pausa più lunga della memoria del cervello ne comincia una nuova."""
         from . import chats
         if self.chat is None or time.time() - self.chat["updated"] > self.cfg["memory_minutes"] * 60:
             self.chat = chats.new()
-            if self.brain:
-                self.brain.history = []
         return self.chat
 
-    def _chat_add(self, role, text):
+    def _chat_add(self, role, text, task=None):
         from . import chats
-        c = self._current_chat()
-        chats.add(c, role, text)
-        if role == "assistant" and self.brain:
-            c["history"] = self.brain.history
-            chats.save(c)
+        with self.chat_lock:                       # più compiti possono scrivere insieme
+            c = self._current_chat()
+            chats.add(c, role, text)
+            if role == "assistant":
+                c["history"] = list(self._lane(task.desktop if task else None)["history"])
+                chats.save(c)
         self.bus.emit("chat_message", id=c["id"], title=c["title"], role=role, text=text)
 
     def _emit_chat(self):
@@ -482,22 +558,20 @@ class Nexus:
             if c:
                 c["updated"] = time.time()          # riaperta: il discorso continua da qui
                 self.chat = c
-                if self.brain:
-                    self.brain.history = list(c.get("history") or [])
-                    self.brain.last = time.time()
+                lane = self._lane()
+                lane["history"] = list(c.get("history") or [])
+                lane["last"] = time.time()
             self._emit_chat()
             return
         if t == "chat_new":
             self.chat = None
-            if self.brain:
-                self.brain.history = []
+            self._lane()["history"] = []
             self._emit_chat()
         elif t == "chat_delete":
             chats.delete(cid)
             if self.chat and self.chat["id"] == cid:
                 self.chat = None
-                if self.brain:
-                    self.brain.history = []
+                self._lane()["history"] = []
                 self._emit_chat()
         elif t == "chat_rename":
             chats.rename(cid, msg.get("title", ""))
@@ -605,82 +679,251 @@ class Nexus:
             except Exception as e:
                 self.bus.emit("provider_result", ok=False, text=f"Connessione fallita: {str(e)[:160]}")
 
-    # ---------- sessione di conversazione ----------
-    def on_wake(self, text=None, audio=None):
-        if not text or len(text.strip()) <= 2:
+    # ---------- compiti: "Ehi Nexus" anche mentre lavora, "Ehi Nexus basta" per fermare ----------
+    def on_wake(self, text=None, audio=None, during=False):
+        """Parola di attivazione sentita. `during` = mentre NEXUS parlava: smette subito di parlare."""
+        if during or self.speech.locked():
+            self.voice.stop()
+        name = self.cfg.get("agent_name") or "Nexus"
+        rest = (text or "").strip()
+        if rest and rest != "…" and T.is_stop(rest, name):
+            return self.stop_command(rest)
+        if rest != "…" and len(rest) <= 2:
             return self._spawn(None)
         if audio is None or self.stt is None:
-            return self._spawn(text.strip())
+            return self._spawn(None if rest == "…" else rest)
 
         def precise():
             # il riconoscimento del nome sbaglia il resto: la domanda la ritrascrive quello principale
-            from .wakename import match
-            q = None if text.strip() == "…" else text.strip()
+            from .wakename import match, match_anywhere
+            q = None if rest == "…" else rest
             try:
                 full = self.stt.transcribe(audio)
-                ok, rest = match(full, self.cfg.get("agent_name") or "Nexus")
-                if ok and len(rest) > 2:
-                    q = rest
-                elif q is None:
+                ok, r = (match_anywhere if during else match)(full, name)
+                if ok and len(r) > 2:
+                    q = r
+                elif q is None and not during:
                     # svegliato dalla voce: il nome è all'inizio ma trascritto storto ("Eto bot accendi la luce")
                     w = full.split()
                     q = " ".join(w[2:]) if len(w) > 3 else None
             except Exception as e:
                 print("trascrizione della domanda:", e)
+            if q and T.is_stop(q, name):
+                return self.stop_command(q)
             self._spawn(q)
         threading.Thread(target=precise, daemon=True).start()
 
-    def _spawn(self, text):
-        if self.brain is None or self.busy.locked():
-            return
-        threading.Thread(target=self.session, args=(text,), daemon=True).start()
+    def _attachments(self, files):
+        """File e immagini incollati (Ctrl+V) o trascinati nella chat: (note per il cervello, immagini)."""
+        from pathlib import Path
+        from .config import CACHE
+        notes, images = [], []
+        for f in files[:6]:
+            p = Path(str(f).removeprefix("file://")).expanduser()
+            if not p.is_file():
+                continue
+            if p.suffix.lower() in IMG_EXT:
+                try:
+                    from PIL import Image
+                    img = Image.open(p).convert("RGB")
+                    img.thumbnail((1600, 1600))
+                    out = CACHE / f"allegato_{uuid.uuid4().hex[:8]}.jpg"
+                    img.save(out, quality=88)
+                    images.append(str(out))
+                    notes.append(f"[immagine allegata: {p.name}]")
+                except Exception as e:
+                    notes.append(f"[immagine {p.name} non leggibile: {e}]")
+                continue
+            txt = None
+            if p.stat().st_size <= 60_000:
+                try:
+                    txt = p.read_text(encoding="utf-8")
+                except (UnicodeDecodeError, OSError):
+                    txt = None
+            if txt is not None:
+                notes.append(f"[file allegato {p}, contenuto:]\n{txt[:12000]}")
+            else:
+                notes.append(f"[file allegato: {p} ({p.stat().st_size // 1024} KB): usa i tool sui file se serve]")
+        return notes, images
 
-    def listen_once(self, wait=5.0):
+    def _spawn(self, text, files=None):
+        """Nuovo compito, anche se un altro sta già lavorando (in parallelo)."""
+        if self.brain is None:
+            return
+        name = self.cfg.get("agent_name") or "Nexus"
+        if text and not files and T.is_stop(text, name):
+            return self.stop_command(text)
+        notes, images = self._attachments(files) if files else ([], [])
+        with self.tasks_lock:
+            live = [t for t in self.tasks.values() if not t.cancelled]
+            if text is None and (self.mic.locked() or any(t.listening for t in live)):
+                return                                 # sta già ascoltando
+            if len(live) >= T.MAX_TASKS:
+                threading.Thread(target=self.say, args=(None, "Sto già facendo quattro cose: aspetta che ne finisca "
+                                 "una, oppure dimmi basta."), daemon=True).start()
+                return
+            shown = text
+            if files:
+                names = ", ".join(os.path.basename(str(f)) for f in files[:6])
+                shown = ((text or "") + f"\n📎 {names}").strip()
+            task = T.Task(shown, desktops.current(), images)
+            task.prompt = ((text or "Guarda l'allegato.") + "\n\n" + "\n".join(notes)) if files else None
+            task.ctx = Ctx(self, task)
+            first = not self.tasks
+            self.tasks[task.id] = task
+        if first:
+            self.bus.emit("session", start=True)
+        self._emit_tasks()
+        threading.Thread(target=self.session, args=(task,), daemon=True, name="task-" + task.id).start()
+
+    def _live(self):
+        with self.tasks_lock:
+            return [t for t in self.tasks.values() if not t.cancelled]
+
+    def _emit_tasks(self):
+        self.bus.emit("tasks", list=[t.info() for t in self._live()], current=desktops.current())
+
+    def task_step(self, task, icon, text):
+        """Passo di un compito nel notch; con più compiti insieme (o da un altro desktop) dice di quale desktop è."""
+        task.step = text
+        many = len(self._live()) > 1
+        tag = f"D{task.desktop} · " if task.desktop and (many or not desktops.is_current(task.desktop)) else ""
+        self.bus.emit("step", icon=icon, text=tag + text)
+        self._emit_tasks()
+
+    def _others(self, task):
+        """Per il cervello: gli altri compiti in corso (così sa rispondere a "a che punto sei?")."""
+        live = [t for t in self._live() if t is not task and t.text]
+        if not live:
+            return ""
+        lines = [f"- «{t.text[:120]}»" + (f" (desktop {t.desktop})" if t.desktop else "")
+                 + (f", adesso: {t.step}" if t.step else "") for t in live]
+        return ("\n\nALTRI COMPITI IN CORSO (li sta facendo in parallelo un'altra parte di te: non rifarli e non "
+                "fermarli; se l'utente chiede a che punto sono, rispondi con queste informazioni):\n" + "\n".join(lines))
+
+    def before_tool(self, task, name, args):
+        """Prima di ogni tool di un compito: le mani (schermo/mouse/browser) le usa un compito alla volta e
+        schermo/mouse solo sul desktop del compito. Le finestre che apre vanno sul desktop del compito.
+        Ritorna una nota per il cervello; "SKIP:…" = non eseguire (lo schermo è cambiato mentre aspettava)."""
+        from .tools import REGISTRY
+        waited = []
+        if T.needs_hands(name, REGISTRY):
+            def on_wait(kind, other):
+                waited.append(kind)
+                if kind == "desktop":
+                    self.task_step(task, "⏸", f"Mi servono schermo e mouse: torna sul desktop {task.desktop}")
+                    self.say(None, f"Per continuare il compito del desktop {task.desktop}, torna su quel desktop.")
+                else:
+                    what = f"«{other.text[:50]}»" if other is not None and other.text else "l'altro compito"
+                    self.task_step(task, "⏳", f"Aspetto che finisca {what}")
+            self.hands.acquire(task, name in T.SCREEN, on_wait)
+            if waited:
+                self.task_step(task, "▶", "Riprendo")
+                if name in BLIND:
+                    return ("SKIP:Non l'ho fatto: hai aspettato un altro compito o il cambio di desktop e lo schermo "
+                            "può essere cambiato. Guarda di nuovo lo schermo (look_screen) e poi rifai l'azione.")
+        if name in T.OPENERS and task.desktop:
+            try:
+                desktops.follow(task.desktop, T.window_hints(name, args, self.cfg))
+            except Exception as e:
+                print("finestre sul desktop del compito:", e)
+        return ""
+
+    def _settle(self):
+        """Stato del notch quando una parte finisce: ascolta/parla hanno la precedenza, poi i compiti, poi riposo."""
+        if self.speech.locked() or self.mic.locked():
+            return
+        live = self._live()
+        if live:
+            detail = f"{len(live)} compiti in corso" if len(live) > 1 else (live[-1].step or "Penso…")
+            self.set_state("thinking", detail)
+        else:
+            self.set_state("idle", self._idle_text())
+
+    def _busy_state(self, state, detail):
+        """Stato di un compito, ma senza coprire "ti ascolto" o "sto parlando" di un altro."""
+        if not self.speech.locked() and not self.mic.locked():
+            self.set_state(state, detail)
+
+    def say(self, task, text):
+        """Parla (una risposta alla volta: le altre aspettano in coda). Un compito fermato non parla più."""
+        if not text or self.voice is None:
+            return
+        with self.speech:
+            if task is not None and task.cancelled:
+                return
+            self.voice.reset()
+            self.speaking_task = task
+            self.set_state("speaking", "")
+            try:
+                self.voice.speak(text)
+            finally:
+                self.speaking_task = None
+        self._settle()
+
+    def listen_once(self, task=None, wait=5.0, beep=False, block=True):
         if self.ears.stream is None:
             self.bus.emit("log", text="Nessun microfono: scrivimi la richiesta.")
             return ""
-        self.set_state("listening", "Ti ascolto…")
-        audio = self.ears.record(wait=wait)
+        if not self.mic.acquire(timeout=10 if block else 0.01):
+            return ""                                   # sta ascoltando un altro compito
+        try:
+            if task is not None:
+                if task.cancelled:
+                    return ""
+                task.listening = True
+            if beep:
+                self.voice.beep("wake")
+            self.set_state("listening", "Ti ascolto…")
+            audio = self.ears.record(wait=wait)
+        finally:
+            if task is not None:
+                task.listening = False
+            self.mic.release()
         if audio is None:
+            self._settle()
             return ""
-        self.set_state("thinking", "Trascrivo…")
+        self._busy_state("thinking", "Trascrivo…")
         return self.stt.transcribe(audio)
 
-    def session(self, text):
-        if not self.busy.acquire(blocking=False):
-            return
-        self.stopped = False
-        self.voice.reset()
+    def session(self, task):
         from .brain import Cancelled
+        lane = self._lane(task.desktop)
+        text = task.text or None
+        prompt = getattr(task, "prompt", None)
         try:
-            self.bus.emit("session", start=True)
             for turn in range(4):
-                if self.stopped:
+                if task.cancelled:
                     break
                 if text is None:
-                    if turn == 0:
-                        self.voice.beep("wake")
-                    text = self.listen_once(wait=5.0 if turn == 0 else 4.0)
-                    if not text or self.stopped:
+                    text = self.listen_once(task, wait=5.0 if turn == 0 else 4.0, beep=turn == 0, block=turn == 0)
+                    if not text or task.cancelled:
                         break
+                    if T.is_stop(text, self.cfg.get("agent_name") or ""):
+                        self.stop_command(text, skip=task)     # "Ehi Nexus" … "basta"
+                        break
+                    task.text = text
+                    self._emit_tasks()
                 self.bus.emit("transcript", text=text)
-                self._chat_add("user", text)
+                self._chat_add("user", text, task)
                 quick = self.quick_command(text)
                 if quick:                              # comandi istantanei, senza passare dal cervello
-                    self._chat_add("assistant", quick)
-                    self.bus.emit("reply", text=quick); self.set_state("speaking", ""); self.voice.speak(quick)
+                    self._chat_add("assistant", quick, task)
+                    self.bus.emit("reply", text=quick)
+                    self.say(task, quick)
                     break
-                self.set_state("thinking", "Penso…")
+                self._busy_state("thinking", "Penso…")
                 t0 = time.time()
-                reply = self.brain.run(text)
-                self.log_chat(text, reply, time.time() - t0)
-                self._chat_add("assistant", reply)
-                if self.stopped:
+                reply = self.brain.run(prompt or text, task, lane,
+                                       images=task.attachments if turn == 0 else None, others=self._others(task))
+                prompt = None
+                self.log_chat(text, reply, time.time() - t0, task)
+                self._chat_add("assistant", reply, task)
+                if task.cancelled:
                     break
                 self.bus.emit("reply", text=reply)
-                self.set_state("speaking", "")
-                self.voice.speak(reply)
-                if self.stopped or not reply.rstrip().endswith("?"):
+                self.say(task, reply)
+                if task.cancelled or not reply.rstrip().endswith("?"):
                     break
                 text = None  # domanda → ascolta la risposta senza wake word
         except Cancelled:
@@ -694,44 +937,53 @@ class Nexus:
             except Exception:
                 pass
         finally:
-            self.bus.emit("session", start=False)
-            self.set_state("idle", self._idle_text())
-            self.busy.release()
+            self.hands.release(task)
+            with self.tasks_lock:
+                self.tasks.pop(task.id, None)
+                empty = not self.tasks
+            self._emit_tasks()
+            if empty:
+                self.bus.emit("session", start=False)
+            self._settle()
 
-    def confirm(self, question):
+    def confirm(self, question, task=None):
         if self.cfg.get("auto_mode"):                       # automode: niente domande
             self.bus.emit("step", icon="⚡", text="Automode: procedo")
             return True
-        cid = uuid.uuid4().hex[:8]
-        p = {"ev": threading.Event(), "ok": False}
-        self.pending[cid] = p
-        self.bus.emit("confirm", id=cid, text=question)
-        if self.stopped:
-            return False
-        self.set_state("speaking", "")
-        self.voice.speak(question + " Di' sì o no.")
+        with self.confirm_lock:                             # una domanda alla volta, anche con più compiti
+            if task is not None and task.cancelled:
+                return False
+            cid = uuid.uuid4().hex[:8]
+            p = {"ev": threading.Event(), "ok": False, "task": task}
+            self.pending[cid] = p
+            self.bus.emit("confirm", id=cid, text=question)
+            self.say(task, question + " Di' sì o no.")
 
-        def by_voice():
-            while not p["ev"].is_set() and not self.stopped:
-                ans = self.listen_once(wait=8.0)
-                if p["ev"].is_set():
-                    return
-                if ans and NO.search(ans):
-                    p["ok"] = False; p["ev"].set()
-                elif ans and YES.search(ans):
-                    p["ok"] = True; p["ev"].set()
-                elif not ans:
-                    return  # silenzio: aspetta il click
-        listener = threading.Thread(target=by_voice, daemon=True)
-        listener.start()
-        p["ev"].wait(30)
-        p["ev"].set()
-        self.ears.cancel()
-        listener.join(3)
-        self.pending.pop(cid, None)
-        self.bus.emit("confirm", id=None, text="")
-        self.set_state("acting", "Procedo…" if p["ok"] else "Annullato")
-        return p["ok"]
+            def by_voice():
+                while not p["ev"].is_set() and not (task is not None and task.cancelled):
+                    ans = self.listen_once(task, wait=8.0, block=False)
+                    if p["ev"].is_set():
+                        return
+                    if ans and NO.search(ans):
+                        p["ok"] = False; p["ev"].set()
+                    elif ans and YES.search(ans):
+                        p["ok"] = True; p["ev"].set()
+                    elif not ans:
+                        return  # silenzio (o microfono occupato): aspetta il click
+            listener = threading.Thread(target=by_voice, daemon=True)
+            listener.start()
+            end = time.time() + 30
+            while not p["ev"].wait(0.3) and time.time() < end:
+                if task is not None and task.cancelled:
+                    break
+            p["ev"].set()
+            if task is not None and task.listening:
+                self.ears.cancel()
+            listener.join(3)
+            self.pending.pop(cid, None)
+            self.bus.emit("confirm", id=None, text="")
+            self._busy_state("acting", "Procedo…" if p["ok"] else "Annullato")
+            return p["ok"] and not (task is not None and task.cancelled)
 
 
 def main():

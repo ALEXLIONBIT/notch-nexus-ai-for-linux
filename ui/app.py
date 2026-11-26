@@ -66,6 +66,60 @@ class Bridge(QObject):
             self.sock.write((json.dumps({"type": type_, **(data or {})}) + "\n").encode())
 
 
+class Clip(QObject):
+    """Appunti per la chat: Ctrl+V incolla immagini e file come allegati, Ctrl+C copia le risposte di NEXUS."""
+
+    def __init__(self):
+        super().__init__()
+        self._n = 0
+
+    @Slot(result="QVariantList")
+    def pasteFiles(self):
+        """File copiati (dal file manager) o un'immagine (screenshot, "copia immagine"): i percorsi da allegare.
+        Lista vuota = negli appunti c'è solo testo, e il campo lo incolla come sempre."""
+        cb = QGuiApplication.clipboard()
+        md = cb.mimeData()
+        if md is None:
+            return []
+        if md.hasUrls():
+            files = [u.toLocalFile() for u in md.urls() if u.isLocalFile() and os.path.isfile(u.toLocalFile())]
+            if files:
+                return files[:6]
+        if md.hasImage() and not (md.hasText() and md.text().strip()):
+            img = cb.image()
+            if not img.isNull():
+                import tempfile
+                import time
+                d = Path(tempfile.gettempdir()) / "nexus-paste"
+                d.mkdir(exist_ok=True)
+                for old in d.glob("*.png"):                     # via quelle dei giorni scorsi
+                    if time.time() - old.stat().st_mtime > 86400:
+                        old.unlink(missing_ok=True)
+                self._n += 1
+                path = d / f"incollata-{time.strftime('%H%M%S')}-{self._n}.png"
+                if img.save(str(path), "PNG"):
+                    return [str(path)]
+        return []
+
+    @Slot("QVariantList", result="QVariantList")
+    def localFiles(self, urls):
+        """File trascinati sulla chat (url file://) → percorsi."""
+        out = []
+        for u in urls:
+            q = QUrl(str(u))
+            if q.isLocalFile() and os.path.isfile(q.toLocalFile()):
+                out.append(q.toLocalFile())
+        return out[:6]
+
+    @Slot(str)
+    def copy(self, text):
+        QGuiApplication.clipboard().setText(text)
+
+    @Slot(str, result=str)
+    def url(self, path):
+        return QUrl.fromLocalFile(path).toString()
+
+
 class WindowKeeper(QObject):
     """Rimette il notch quando sparisce: col coperchio chiuso o in sospensione lo schermo del portatile
     "scompare", KDE chiude le superfici del notch e al ritorno nessuno le ricreava (NEXUS rispondeva ma
@@ -144,6 +198,8 @@ def main():
     engine = QQmlApplicationEngine()
     bridge = Bridge()
     engine.rootContext().setContextProperty("nexus", bridge)
+    clip = Clip()
+    engine.rootContext().setContextProperty("clip", clip)
     engine.addImportPath(str(HERE / "qml"))
     main_qml = "MainLayer.qml" if USE_LAYER else "MainPlain.qml"
     engine.load(QUrl.fromLocalFile(str(HERE / "qml" / main_qml)))

@@ -1,6 +1,6 @@
 [Unit]
 Description=NEXUS backend (voce, cervello, azioni)
-After=pipewire.service ollama.service
+After=graphical-session.target pipewire.service ollama.service
 PartOf=graphical-session.target
 
 [Service]

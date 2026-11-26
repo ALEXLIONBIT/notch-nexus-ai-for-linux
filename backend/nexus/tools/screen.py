@@ -25,6 +25,9 @@ def screenshot():
     import shutil
     path = CACHE / "screen.png"
     path.unlink(missing_ok=True)
+    if not IS_WIN:
+        from ..osys import fix_gui_env
+        fix_gui_env()                                # servizio partito prima della sessione: senza display Spectacle muore
     if IS_WIN:
         from . import _win_input  # noqa: F401  (pixel veri anche con lo schermo scalato)
         from PIL import ImageGrab
@@ -48,7 +51,10 @@ def screenshot():
         from PIL import ImageGrab
         ImageGrab.grab().save(path)
         return path
-    raise RuntimeError("screenshot non riuscito: installa spectacle, grim o gnome-screenshot")
+    if not tries:
+        raise RuntimeError("manca il programma per gli screenshot: installa spectacle, grim o gnome-screenshot")
+    raise RuntimeError("lo screenshot non è riuscito (il programma " + tries[0][0] + " non vede lo schermo): "
+                       "riprova tra un attimo o riavvia NEXUS da Personalizza → Aggiornamenti → Riavvia")
 
 
 def small_copy(path, max_w=1024):

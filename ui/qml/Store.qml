@@ -39,6 +39,9 @@ Item {
     property bool permsSeen: false
     property var browserMcp: ({ state: "off", browser: "", text: "" })
     property var wakeVoice: ({ ready: false, step: 0, text: "" })   // la tua voce come parola di attivazione       // primo avvio su Linux: passo "Permessi" già visto
+    property var tasks: []              // compiti in corso (più di uno insieme): {id, text, desktop, step, waiting}
+    property int curDesktop: 0
+    property string toastText: ""
     property var tailscale: ({ installed: false, state: "", ip: "", name: "", text: "", error: "", working: false })
     property bool connected: nexus.connected
     property bool fullscreen: false
@@ -180,6 +183,11 @@ Item {
     ListModel { id: stepsModel }
 
     function send(t, d) { nexus.send(t, d || {}) }
+    // Ctrl+V nella chat: file o immagine negli appunti → allegati (lista vuota = solo testo, incolla normale)
+    function pasteFiles() { return clip.pasteFiles() }
+    function copy(t) { clip.copy(t); toast("Copiato") }
+    function toast(t) { toastText = t; toastOff.restart() }
+    Timer { id: toastOff; interval: 1600; onTriggered: store.toastText = "" }
 
     FontLoader { id: dotoFont; source: Qt.resolvedUrl("../fonts/Doto.ttf") }
     readonly property string dotFamily: dotoFont.status === FontLoader.Ready ? dotoFont.font.family : "monospace"
@@ -216,6 +224,7 @@ Item {
                 while (stepsModel.count > 5) stepsModel.remove(0)
                 break
             case "image": store.image = "file:///" + d.path.replace(/\\/g, "/").replace(/^\/+/, "") + "?t=" + Date.now(); break
+            case "tasks": store.tasks = d.list || []; store.curDesktop = d.current || 0; break
             case "tailscale": store.tailscale = d; break
             case "perms": store.perms = d; break
             case "wake_voice": store.wakeVoice = d; break

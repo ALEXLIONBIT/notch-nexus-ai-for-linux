@@ -1,6 +1,7 @@
 """Il cervello: Qwen (vision + tool calling) via Ollama, con loop di azioni."""
 import json
 import re
+import threading
 import time
 from datetime import datetime
 
@@ -65,21 +66,23 @@ def personality_text(p):
             "in italiano, breve perché le risposte sono lette a voce, e non smettere mai di usare i tool quando servono):\n" + p)
 
 class Brain:
+    """Il cervello è uno solo ma lavora a più compiti insieme: ogni compito (tasks.Task) ha il suo stop
+    e la memoria breve del suo desktop (lane: {"history": [...], "last": tempo})."""
+
     def __init__(self, cfg, tools, ctx):
         self.cfg, self.tools, self.ctx = cfg, tools, ctx
-        self.history = []
-        self.last = 0.0
-        self.cancelled = False
+        self.lock = threading.Lock()
 
     def provider(self):
         """Il provider attivo (Ollama locale/remoto o API compatibile OpenAI)."""
         return make_provider(self.cfg.active_provider(), self.cfg)
 
-    def _chat(self, messages):
+    def _chat(self, messages, task):
         """Chiamata in streaming: si può interrompere a metà con stop.
         Se il cervello scelto non risponde, propone di passare a quello locale e riprova."""
+        ctx = task.ctx or self.ctx
         try:
-            return self.provider().chat(messages, self.tools.schemas, lambda: self.cancelled)
+            return self.provider().chat(messages, self.tools.schemas, lambda: task.cancelled)
         except Cancelled:
             raise
         except Exception as e:
@@ -90,13 +93,13 @@ class Brain:
                 raise
             cur = self.cfg.active_provider()
             print(f"cervello '{cur.get('name')}' non risponde: {str(e)[:150]}")
-            if not self.ctx.confirm(f"Il cervello {cur.get('name')} non risponde. Passo a quello locale, {fb.get('model')} su questo PC?"):
+            if not ctx.confirm(f"Il cervello {cur.get('name')} non risponde. Passo a quello locale, {fb.get('model')} su questo PC?"):
                 raise
             self.cfg["provider"] = fb["id"]
             self.cfg.save()
-            self.ctx.n.bus.emit("config", config=self.cfg.public())
-            self.ctx.step("🔁", f"Uso il cervello locale ({fb.get('model')})")
-            return self.provider().chat(messages, self.tools.schemas, lambda: self.cancelled)
+            ctx.n.bus.emit("config", config=self.cfg.public())
+            ctx.step("🔁", f"Uso il cervello locale ({fb.get('model')})")
+            return self.provider().chat(messages, self.tools.schemas, lambda: task.cancelled)
 
     def _fallback(self):
         """Un cervello Ollama su questo PC, diverso da quello attivo."""
@@ -107,14 +110,15 @@ class Brain:
                 return p
         return None
 
-    def run(self, user_text):
+    def run(self, user_text, task, lane, images=None, others=""):
         try:
-            return self._run(user_text)
+            return self._run(user_text, task, lane, images, others)
         except Exception as e:
             if "context" not in str(e).lower() or isinstance(e, Cancelled):
                 raise
-            self.history = []                       # contesto pieno: riparte con memoria pulita
-            return self._run(user_text)
+            with self.lock:
+                lane["history"] = []                 # contesto pieno: riparte con memoria pulita
+            return self._run(user_text, task, lane, images, others)
 
     @staticmethod
     def _only_last_image(msgs):
@@ -124,15 +128,22 @@ class Brain:
             if m.get("images"):
                 if seen:
                     m.pop("images")
-                    m["content"] = "(screenshot precedente rimosso)"
+                    if m.get("auto"):
+                        m["content"] = "(screenshot precedente rimosso)"
+                    else:                            # immagine incollata dall'utente: il testo della richiesta resta
+                        m["content"] = (m.get("content") or "") + " (immagine allegata già vista)"
                 seen = True
 
-    def _run(self, user_text):
-        self.cancelled = False
-        self.log_steps = []
-        if time.time() - self.last > self.cfg["memory_minutes"] * 60:
-            self.history = []
-        self.last = time.time()
+    def _run(self, user_text, task, lane, images, others):
+        if task.cancelled:
+            raise Cancelled()
+        task.log_steps = []
+        ctx = task.ctx or self.ctx
+        with self.lock:
+            if time.time() - lane.get("last", 0) > self.cfg["memory_minutes"] * 60:
+                lane["history"] = []
+            lane["last"] = time.time()
+            past = list(lane.get("history") or [])
         now = datetime.now().strftime("%A %d %B %Y, %H:%M")
         from .osys import os_name
         system = SYSTEM.format(
@@ -143,17 +154,20 @@ class Brain:
         if "browser_navigate" in REGISTRY:
             from .browsermcp import GUIDE
             system += GUIDE
-        msgs = [{"role": "system", "content": system}, *self.history,
-                {"role": "user", "content": user_text}]
+        system += others
+        user = {"role": "user", "content": user_text}
+        if images:
+            user["images"] = list(images)
+        msgs = [{"role": "system", "content": system}, *past, user]
         reply = "Ho fatto troppi passaggi senza finire, riprova con una richiesta più semplice."
         used_tools, nudged = False, False
         seen_calls = {}
         finished = False
         for _ in range(self.cfg["max_steps"]):
-            if self.cancelled:
+            if task.cancelled:
                 raise Cancelled()
             self._only_last_image(msgs)
-            content, calls = self._chat(msgs)
+            content, calls = self._chat(msgs, task)
             msgs.append({"role": "assistant", "content": content, **({"tool_calls": calls} if calls else {})})
             if not calls:
                 reply = drop_courtesy(content) or "Fatto."
@@ -168,7 +182,7 @@ class Brain:
                 break
             used_tools = True
             for c in calls:
-                if self.cancelled:
+                if task.cancelled:
                     raise Cancelled()
                 name, args = c["name"], c["arguments"]
                 key = name + json.dumps(args, sort_keys=True)
@@ -179,31 +193,50 @@ class Brain:
                                  "Non ripeterla: rispondi all'utente o prova un'altra strada.",
                                  "name": name, "tool_call_id": c["id"]})
                     continue
-                res = self.tools.call(name, args)
-                self.log_steps.append({"tool": name, "args": args, "result": res.text[:300]})
+                gate = getattr(ctx, "before_tool", None)
+                note = gate(name, args or {}) if gate else ""     # mani occupate da un altro compito: aspetta
+                if task.cancelled:
+                    raise Cancelled()
+                if note.startswith("SKIP:"):                       # lo schermo è cambiato mentre aspettava
+                    msgs.append({"role": "tool", "content": note[5:], "name": name, "tool_call_id": c["id"]})
+                    continue
+                res = self.tools.call(name, args, ctx)
+                self.log_steps_add(task, name, args, res.text)
                 msgs.append({"role": "tool", "content": res.text, "name": name, "tool_call_id": c["id"]})
                 if res.image:
                     msgs.append({"role": "user", "content": "Ecco lo screenshot attuale dello schermo.",
-                                 "images": [res.image]})
+                                 "images": [res.image], "auto": True})
         if not finished:
             # limite di passaggi: invece di arrendersi, riassume cosa ha fatto e cosa manca
             try:
                 msgs.append({"role": "system", "content": "Basta azioni. In una o due frasi di' all'utente cosa hai "
                              "fatto finora e cosa manca (o cosa deve fare lui)."})
-                content, _ = self.provider().chat(msgs, [], lambda: self.cancelled)
+                content, _ = self.provider().chat(msgs, [], lambda: task.cancelled)
                 reply = drop_courtesy(content) or reply
             except Cancelled:
                 raise
             except Exception:
                 pass
-        # memoria breve: niente immagini, risultati dei tool accorciati, ultimi 12 messaggi
-        hist = []
-        for mm in msgs[1:]:
-            mm = {k: v for k, v in mm.items() if k != "images"}
+        # memoria breve del desktop: niente immagini, risultati dei tool accorciati, ultimi 12 messaggi.
+        # Si aggiunge in coda (un altro compito dello stesso desktop può aver finito nel frattempo).
+        new = []
+        for mm in msgs[1 + len(past):]:
+            if mm["role"] == "system":
+                continue
+            mm = {k: v for k, v in mm.items() if k not in ("images", "auto")}
             if mm["role"] == "tool" and len(mm["content"]) > 400:
                 mm["content"] = mm["content"][:400] + "…"
-            hist.append(mm)
-        self.history = hist[-12:]
-        while self.history and self.history[0]["role"] != "user":
-            self.history.pop(0)
+            new.append(mm)
+        if not finished:
+            new.append({"role": "assistant", "content": reply})
+        with self.lock:
+            hist = (list(lane.get("history") or []) + new)[-12:]
+            while hist and hist[0]["role"] != "user":
+                hist.pop(0)
+            lane["history"] = hist
+            lane["last"] = time.time()
         return reply
+
+    @staticmethod
+    def log_steps_add(task, name, args, text):
+        task.log_steps.append({"tool": name, "args": args, "result": text[:300]})

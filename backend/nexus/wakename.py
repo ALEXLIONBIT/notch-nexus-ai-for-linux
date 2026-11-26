@@ -18,7 +18,8 @@ GREET = {"ehi", "ei", "hey", "hei", "ehy", "ey", "eh", "e", "ai", "hai", "ay", "
 # "il robot", "un robot", "del robot": si parla DEL robot, non AL robot
 ARTICLES = {"il", "lo", "la", "l", "un", "uno", "una", "gli", "le", "del", "dello", "della", "al", "allo", "alla",
             "col", "nel", "sul", "dal", "the", "a", "an", "my", "mio", "tuo", "questo", "quel", "quello"}
-FUSED = {"e", "ei", "i", "ai", "ey", "ae"}                 # suono del saluto attaccato al nome ("eirobot")
+FUSED = {"e", "ei", "i", "ai", "ey", "ae"}
+STRONG = {"ehi", "ei", "hey", "hei", "ehy", "ey", "ok", "okay", "oi", "hej", "ciao"}   # saluti sicuri anche a metà frase                 # suono del saluto attaccato al nome ("eirobot")
 
 TAGS = re.compile(r"[\[(][^\])]*[\])]")                     # "[Musica]", "(rumore)": etichette, non parole
 
@@ -89,6 +90,25 @@ def match(text, name, need_greeting=True):
     return False, ""
 
 
+def match_anywhere(text, name):
+    """Come match, ma "Ehi <nome>" può essere a metà frase: serve mentre NEXUS parla, perché il microfono
+    sente anche la sua voce prima del tuo "Ehi Robot basta"."""
+    ok, rest = match(text, name)
+    if ok:
+        return ok, rest
+    words = TAGS.sub(" ", text).split()
+    for i in range(1, len(words)):
+        w = _plain(words[i])
+        # a metà frase solo saluti veri ("ehi", "hey", "ok") o saluto attaccato al nome ("eirobot"):
+        # "e"/"i" da soli sono congiunzioni comuni nella sua stessa voce
+        if not w or (w[0] not in STRONG and len(w[0]) <= len("".join(name_words(name)))):
+            continue
+        ok, rest = match(" ".join(words[i:]), name)
+        if ok:
+            return ok, rest
+    return False, ""
+
+
 class NameSpotter:
     """Decide se una frase breve è "Ehi <nome>":
     1. se hai registrato la tua voce, confronta il suono (vicinissimo → sveglio; lontano → no, senza nemmeno trascrivere);
@@ -121,11 +141,12 @@ class NameSpotter:
             except Exception as e:
                 print("impronte vocali non disponibili:", e)
 
-    def check(self, audio_int16, on_hit):
+    def check(self, audio_int16, on_hit, during=False):
+        """during = sentito mentre NEXUS parlava: il nome si cerca anche a metà frase."""
         if self.busy:
             return
         self.busy = True
-        threading.Thread(target=self._run, args=(audio_int16, on_hit), daemon=True, name="wake-name").start()
+        threading.Thread(target=self._run, args=(audio_int16, on_hit, during), daemon=True, name="wake-name").start()
 
     def _text(self, audio, lang):
         # NIENTE suggerimento col nome: su rumore o silenzio Whisper "inventa" il testo suggerito
@@ -133,7 +154,7 @@ class NameSpotter:
                                         condition_on_previous_text=False, without_timestamps=True, vad_filter=False)
         return " ".join(s.text for s in segs if s.no_speech_prob < 0.6).strip()
 
-    def _run(self, audio, on_hit):
+    def _run(self, audio, on_hit, during=False):
         try:
             self.load()
             name = (self.cfg.get("agent_name") or "Nexus").strip()
@@ -146,15 +167,16 @@ class NameSpotter:
                 if d >= vm.loose * k:
                     return                                   # non somiglia per niente alla tua voce che lo chiama
                 if d < vm.strict * k:
-                    more = dur > max(vm.lengths) + 0.9       # dopo il nome c'è una domanda
+                    more = during or dur > max(vm.lengths) + 0.9     # dopo il nome c'è una domanda (o un "basta")
                     print(f"voce riconosciuta (distanza {d:.3f})")
                     on_hit("…" if more else "", audio)
                     return
+            find = match_anywhere if during else match
             text = self._text(audio, self.cfg.get("language", "it"))
-            ok, rest = match(text, name)
+            ok, rest = find(text, name)
             if not ok and dur <= 2.5:                        # "Hey Robot" detto all'inglese
                 text_en = self._text(audio, "en")
-                ok, rest = match(text_en, name)
+                ok, rest = find(text_en, name)
                 text = text_en if ok else text
             if ok:
                 print(f"nome sentito: “{text}”" + (f" (voce {d:.3f})" if d is not None else ""))

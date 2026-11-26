@@ -57,6 +57,14 @@ Canvas {
             c.beginPath(); c.moveTo(11.4, 11.4); c.lineTo(15, 15); c.stroke(); break
         case "check":
             c.moveTo(3.5, 9.5); c.lineTo(7.5, 13.5); c.lineTo(14.5, 5); c.stroke(); break
+        case "copy":
+            c.roundedRect(6.5, 6.5, 8.5, 9, 2, 2); c.stroke()
+            c.beginPath(); c.moveTo(4, 11.5); c.lineTo(3.5, 11.5); c.lineTo(3.5, 3.8); c.quadraticCurveTo(3.5, 3, 4.3, 3)
+            c.lineTo(10.5, 3); c.lineTo(10.5, 4); c.stroke(); break
+        case "clip":
+            c.moveTo(12.5, 6); c.lineTo(7, 11.5); c.bezierCurveTo(5.5, 13, 8, 15.5, 9.5, 14)
+            c.lineTo(15, 8.5); c.bezierCurveTo(17.5, 6, 13.5, 2, 11, 4.5); c.lineTo(5, 10.5)
+            c.bezierCurveTo(1.5, 14, 6.5, 19, 10, 15.5); c.stroke(); break
         }
     }
 }

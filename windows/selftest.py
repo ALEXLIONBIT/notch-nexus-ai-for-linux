@@ -357,6 +357,8 @@ def ui_main():
         eng = QQmlApplicationEngine()
         eng.warnings.connect(lambda ws: warnings.extend(w.toString() for w in ws))
         eng.rootContext().setContextProperty("nexus", ui.Bridge())
+        clip = ui.Clip()
+        eng.rootContext().setContextProperty("clip", clip)
         eng.addImportPath(str(ui.HERE / "qml"))
         eng.load(QUrl.fromLocalFile(str(ui.HERE / "qml" / "MainPlain.qml")))
         QTimer.singleShot(1500, lambda: qapp.exit(0))

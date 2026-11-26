@@ -115,20 +115,23 @@ class Ears:
             self.preroll.append(chunk)
             # rumore di fondo (media lenta)
             self.noise = 0.98 * self.noise + 0.02 * min(rms, 20000)
+            # anche mentre NEXUS parla: "Ehi Nexus basta" lo interrompe (e "Ehi Nexus, …" lo zittisce e ascolta)
             if self.spotter is not None:
-                if not self.muted and self.cfg["wake_enabled"]:
+                if self.cfg["wake_enabled"]:
                     self._spot_name(chunk, rms)
                 else:
                     self._seg = None
                 continue
-            if self.oww is None or self.muted or not self.cfg["wake_enabled"]:
+            if self.oww is None or not self.cfg["wake_enabled"]:
                 continue
             scores = self.oww.predict(chunk)
-            if scores and max(scores.values()) >= self.cfg["wake_threshold"] and time.time() > self._cool:
+            # mentre parla serve più sicurezza: la sua stessa voce non deve svegliarlo
+            need = max(self.cfg["wake_threshold"], 0.75) if self.muted else self.cfg["wake_threshold"]
+            if scores and max(scores.values()) >= need and time.time() > self._cool:
                 self._cool = time.time() + 2.0
                 self.oww.reset()
                 self.preroll.clear()          # niente "Hey Jarvis" nella frase
-                self.on_wake()
+                self._call_wake(None, None, self.muted)
 
     # ---------- parola di attivazione = nome ----------
     def _spot_name(self, chunk, rms):
@@ -139,8 +142,9 @@ class Ears:
         seg = self._seg
         if voice:
             if seg is None:
-                seg = self._seg = {"buf": list(self.preroll)[-3:], "n": 0, "quiet": 0}
+                seg = self._seg = {"buf": list(self.preroll)[-3:], "n": 0, "quiet": 0, "during": self.muted}
             seg["quiet"] = 0
+            seg["during"] = seg["during"] or self.muted
         elif seg is not None:
             seg["quiet"] += 1
         if seg is None:
@@ -152,16 +156,20 @@ class Ears:
             self._seg = None
             dur = (seg["n"] - seg["quiet"]) * step
             if 0.3 <= dur <= 6.5 and time.time() > self._cool:
-                self.spotter.check(np.concatenate(seg["buf"]), self._name_hit)
+                during = seg.get("during", False)
+                self.spotter.check(np.concatenate(seg["buf"]), lambda r, a: self._name_hit(r, a, during), during)
 
-    def _name_hit(self, rest, audio=None):
-        if self.muted or time.time() < self._cool:
+    def _name_hit(self, rest, audio=None, during=False):
+        if time.time() < self._cool:
             return
         self._cool = time.time() + 2.0
         self.preroll.clear()
+        self._call_wake(rest, audio, during)    # "Marco, che ore sono?" → la domanda va subito al cervello
+
+    def _call_wake(self, rest, audio, during):
         try:
-            self.on_wake(rest, audio)     # "Marco, che ore sono?" → la domanda va subito al cervello
-        except TypeError:
+            self.on_wake(rest, audio, during)
+        except TypeError:                         # on_wake vecchio stile (test)
             self.on_wake()
 
     # ---------- registrazione comando ----------

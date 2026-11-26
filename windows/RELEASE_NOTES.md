@@ -1,3 +1,5 @@
+**Novità 0.6.0** — Più compiti insieme: mentre NEXUS lavora puoi dire di nuovo "Ehi Nexus, …" e ti risponde subito, con l'altro compito che continua in background (schermo, mouse e browser li usa uno alla volta). Un compito per desktop virtuale (KDE, Mint e gli altri X11): le finestre restano sul desktop dove l'hai chiesto. "Ehi Nexus basta" (o "stop", "zitto") lo zittisce anche mentre parla e ferma il compito; nel notch c'è l'elenco dei compiti con la ✕. Ctrl+V nella chat incolla immagini e file, Ctrl+C e il pulsante copia copiano le risposte. Risolto "non ho lo strumento screenshot": se NEXUS partiva prima della sessione grafica non vedeva lo schermo.
+
 **Novità 0.5.3** — Il notch non sparisce più dopo aver chiuso il coperchio, la sospensione o il cambio di monitor: quando lo schermo torna, NEXUS lo ricrea da solo.
 
 **Novità 0.5.2** — Con Playwright attivo, *apri un sito* e *cerca* passano dal browser pilotato (prima aprivano il browser normale e Playwright restava inutilizzato): NEXUS legge la pagina e può continuare a cliccare e scrivere. Node.js viene trovato anche se installato con nvm.

@@ -83,3 +83,33 @@ def os_name():
         return f"Windows {rel}"
     de = os.environ.get("XDG_CURRENT_DESKTOP", "")
     return "Linux, desktop KDE Plasma" if "KDE" in de.upper() else f"Linux, desktop {de or 'grafico'}"
+
+
+def fix_gui_env():
+    """Un servizio partito prima della sessione grafica non ha WAYLAND_DISPLAY / DISPLAY: senza, gli screenshot
+    (Spectacle) e le finestre falliscono. Li riprende da systemd (dove KDE/GNOME li pubblicano) o dai socket."""
+    if IS_WIN:
+        return
+    keys = ("WAYLAND_DISPLAY", "DISPLAY", "XDG_SESSION_TYPE", "XDG_CURRENT_DESKTOP", "DBUS_SESSION_BUS_ADDRESS")
+    if all(os.environ.get(k) for k in keys[:2]) and os.environ.get("XDG_CURRENT_DESKTOP"):
+        return
+    try:
+        out = subprocess.run(["systemctl", "--user", "show-environment"], capture_output=True, text=True,
+                             timeout=5).stdout
+        for line in out.splitlines():
+            k, _, v = line.partition("=")
+            if k in keys and v and not os.environ.get(k):
+                os.environ[k] = v
+    except (OSError, subprocess.SubprocessError):
+        pass
+    rt = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+    if not os.environ.get("WAYLAND_DISPLAY"):
+        socks = sorted(p.name for p in rt.glob("wayland-*") if not p.name.endswith(".lock"))
+        if socks:
+            os.environ["WAYLAND_DISPLAY"] = socks[0]
+    if os.environ.get("WAYLAND_DISPLAY") and not os.environ.get("XDG_SESSION_TYPE"):
+        os.environ["XDG_SESSION_TYPE"] = "wayland"
+    if not os.environ.get("DISPLAY"):
+        xs = sorted(Path("/tmp/.X11-unix").glob("X*"), key=lambda p: p.stat().st_mtime)
+        if xs:
+            os.environ["DISPLAY"] = ":" + xs[-1].name[1:]

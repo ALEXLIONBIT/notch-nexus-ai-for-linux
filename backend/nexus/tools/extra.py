@@ -214,7 +214,7 @@ def reminder(ctx, minutes, text):
         time.sleep(secs)
         notify("Promemoria", text)
         try:
-            ctx.n.voice.speak(f"Promemoria: {text}")
+            ctx.n.say(None, f"Promemoria: {text}")      # in coda alle altre risposte, non sopra
         except Exception:
             pass
     threading.Thread(target=fire, daemon=True).start()

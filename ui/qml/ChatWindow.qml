@@ -13,6 +13,7 @@ Window {
     readonly property color line: s.dark ? "#242a32" : "#e3e7eb"
     readonly property color bubble: s.dark ? "#1d232b" : "#eef1f4"
     readonly property bool busy: s.st === "thinking" || s.st === "acting" || s.st === "speaking" || s.st === "listening"
+    property var files: []          // allegati (Ctrl+V o trascinati sulla finestra)
     title: "NEXUS · Chat"
     width: 980; height: 680
     minimumWidth: 640; minimumHeight: 420
@@ -28,6 +29,11 @@ Window {
         var y = new Date(now); y.setDate(now.getDate() - 1)
         if (d.toDateString() === y.toDateString()) return "ieri " + hm
         return d.toLocaleDateString(Qt.locale("it_IT"), "d MMM") + " " + hm
+    }
+
+    DropArea {
+        anchors.fill: parent
+        onDropped: drop => { if (drop.hasUrls) { win.files = win.files.concat(clip.localFiles(drop.urls)); input.forceActiveFocus() } }
     }
 
     RowLayout {
@@ -127,6 +133,14 @@ Window {
                     readonly property bool mine: modelData.role === "user"
                     width: ListView.view.width
                     height: b.height
+                    HoverHandler { id: rowHover }
+                    IconButton {   // copia tutto il messaggio (per una parte: selezionala e Ctrl+C)
+                        glyph: "copy"; size: 26; tint: win.s.inkSoft; tip: "Copia"
+                        visible: rowHover.hovered
+                        anchors.verticalCenter: b.verticalCenter
+                        x: row.mine ? b.x - width - 4 : b.x + b.width + 4
+                        onClicked: win.s.copy(row.modelData.text)
+                    }
                     Rectangle {
                         id: b
                         anchors.right: row.mine ? row.right : undefined
@@ -140,6 +154,8 @@ Window {
                             width: Math.min(implicitWidth, row.width * 0.78 - 28)
                             text: row.modelData.text
                             readOnly: true; selectByMouse: true; wrapMode: Text.Wrap
+                            selectionColor: row.mine ? "#ffffff" : Qt.rgba(win.s.led.r, win.s.led.g, win.s.led.b, 0.45)
+                            selectedTextColor: "#0b1015"
                             color: row.mine ? "#0b1015" : win.s.ink
                             font { family: win.s.sansFamily; pixelSize: 14 }
                         }
@@ -150,6 +166,18 @@ Window {
                     text: "Scrivi qui sotto o premi il microfono per parlare."
                     color: win.s.inkSoft; font { family: win.s.sansFamily; pixelSize: 13 }
                 }
+            }
+            Text {
+                Layout.leftMargin: 20; Layout.topMargin: 4
+                visible: win.s.toastText !== ""
+                text: "✓ " + win.s.toastText
+                color: win.s.ink; font { family: win.s.sansFamily; pixelSize: 12; weight: Font.Bold }
+            }
+            Attachments {
+                Layout.fillWidth: true; Layout.leftMargin: 14; Layout.rightMargin: 14; Layout.topMargin: 6
+                files: win.files; family: win.s.sansFamily
+                ink: win.s.ink; chip: win.bubble
+                onRemoved: i => { var f = win.files.slice(); f.splice(i, 1); win.files = f }
             }
             Text {
                 Layout.leftMargin: 20; Layout.topMargin: 4
@@ -168,10 +196,19 @@ Window {
                     leftPadding: 16
                     background: Rectangle { implicitHeight: 44; radius: 22; color: win.bubble
                         border.color: input.activeFocus ? win.s.led : "transparent" }
-                    onAccepted: { if (text.trim()) win.s.send("text", { text: text.trim() }); text = "" }
+                    Keys.onPressed: event => {
+                        if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_V) {
+                            var f = win.s.pasteFiles()
+                            if (f.length) { win.files = win.files.concat(f); event.accepted = true }
+                        }
+                    }
+                    onAccepted: {
+                        if (text.trim() || win.files.length) win.s.send("text", { text: text.trim(), files: win.files })
+                        text = ""; win.files = []
+                    }
                 }
-                IconButton { glyph: "send"; size: 44; tint: input.text ? "#0b1015" : win.s.inkSoft
-                    fill: input.text ? win.s.led : win.bubble; tip: "Invia"; onClicked: input.accepted() }
+                IconButton { glyph: "send"; size: 44; tint: (input.text || win.files.length) ? "#0b1015" : win.s.inkSoft
+                    fill: (input.text || win.files.length) ? win.s.led : win.bubble; tip: "Invia"; onClicked: input.accepted() }
                 IconButton { glyph: win.busy ? "stop" : "mic"; size: 44; tip: win.busy ? "Ferma" : "Parla"
                     tint: win.busy ? "white" : win.s.ink; fill: win.busy ? "#d9364b" : win.bubble
                     onClicked: win.s.send(win.busy ? "stop" : "listen") }

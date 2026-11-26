@@ -41,7 +41,17 @@ Con un clic diventa un **casco robot a schermo intero** con il volto a LED, comp
 - **Cervello di riserva**: se il cervello scelto non risponde, NEXUS chiede se passare a quello locale (in automode lo fa da solo)
 - **Non si chiude per sbaglio**: Alt+F4 viene ignorato, si esce solo da Personalizza → Esci da NEXUS
 - **Voce robotica** in italiano (Piper e un filtro robot regolabile) e sottotitoli karaoke sincronizzati
-- **Stop vero**: ferma subito voce, ascolto e ragionamento
+- **Stop vero**: ferma subito voce, ascolto e ragionamento. Anche a voce: **"Ehi Nexus basta"** (o "stop", "zitto")
+  lo zittisce subito mentre parla e ferma il compito del desktop dove sei; "basta tutto" li ferma tutti
+- **Più compiti insieme**: mentre lavora puoi dire di nuovo "Ehi Nexus, …" e ti risponde subito, mentre l'altro
+  compito continua in background. Schermo, mouse e browser li usa un compito alla volta (l'altro aspetta il suo turno).
+  Il notch mostra l'elenco dei compiti con una ✕ per fermarne uno
+- **Un compito per desktop virtuale** (KDE Plasma, Cinnamon/Mint e gli altri X11): chiedi qualcosa sul desktop 1,
+  passa al 2 e chiedi altro. Le finestre che apre un compito restano sul suo desktop; se gli servono schermo e mouse
+  aspetta che torni lì. Ogni desktop ha la sua memoria della conversazione
+- **Incolla e copia nella chat**: Ctrl+V nel notch o nella finestra Chat allega immagini (screenshot, "copia
+  immagine") e file copiati dal file manager; puoi anche trascinarli. Le risposte si selezionano e si copiano
+  (Ctrl+C o il pulsante copia)
 
 ## App Android (telefono e tablet)
 

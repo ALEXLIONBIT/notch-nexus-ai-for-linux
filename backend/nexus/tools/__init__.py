@@ -35,12 +35,13 @@ class Tools:
     def schemas(self):
         return [s for _, s in REGISTRY.values()]
 
-    def call(self, name, args):
+    def call(self, name, args, ctx=None):
+        """ctx: quello del compito che chiama (passi nel notch, conferme); se manca quello generale."""
         if name not in REGISTRY:
             return ToolResult(f"Tool sconosciuto: {name}")
         fn, _ = REGISTRY[name]
         try:
-            res = fn(self.ctx, **(args or {}))
+            res = fn(ctx or self.ctx, **(args or {}))
             return res if isinstance(res, ToolResult) else ToolResult(str(res))
         except TypeError as e:
             return ToolResult(f"Argomenti sbagliati per {name}: {e}")
