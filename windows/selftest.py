@@ -297,7 +297,9 @@ def main():
                              "base_url": f"http://127.0.0.1:{srv.server_port}/v1", "api_key": "x", "model": "finto"}]
         cfg["provider"] = "finto"
         from nexus.brain import Brain
-        reply = Brain(cfg, tools, ctx).run("come sta il computer?")
+        from nexus.tasks import Task
+        q = "come sta il computer?"
+        reply = Brain(cfg, tools, ctx).run(q, Task(q), {})
         srv.shutdown()
         assert reply == "Il PC sta benissimo.", reply
         sysmsg = calls[0]["messages"][0]["content"]
