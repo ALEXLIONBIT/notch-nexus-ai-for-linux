@@ -15,3 +15,6 @@ android/tsbridge/*.aar
 linux/dist/
 linux/build/
 .playwright-mcp/
+
+# mappa del progetto per Claude (graphify): solo in locale
+graphify-out/

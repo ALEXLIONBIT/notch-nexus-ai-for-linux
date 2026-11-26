@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -110,7 +112,7 @@ class MainActivity : ComponentActivity() {
         BoxWithConstraints(Modifier.fillMaxSize().background(Look.bg)) {
             val tablet = maxWidth > 600.dp
             val content: @Composable (Modifier) -> Unit = { m ->
-                Box(m) {
+                Box(m.imePadding()) {          // in ogni scheda i campi di testo restano sopra la tastiera
                     when (tab) {
                         0 -> HomeScreen(tablet)
                         1 -> ChatsScreen(onOpen = { tab = 0 })
@@ -135,7 +137,8 @@ class MainActivity : ComponentActivity() {
             } else {
                 Column(Modifier.fillMaxSize().systemBarsPadding()) {
                     content(Modifier.weight(1f).fillMaxWidth())
-                    NavigationBar(containerColor = if (th.dark) Color(0xFF1C1F24) else Color.White) {
+                    // con la tastiera aperta la barra delle schede sparisce: tutto lo spazio va a quello che scrivi
+                    if (!imeOpen()) NavigationBar(containerColor = if (th.dark) Color(0xFF1C1F24) else Color.White) {
                         tabs.forEachIndexed { i, (label, icon) ->
                             NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Icon(icon, label) }, label = { Text(label) },
                                 colors = NavigationBarItemDefaults.colors(selectedIconColor = Color(0xFF0B1015), indicatorColor = Look.led,
@@ -146,6 +149,10 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /** La tastiera del telefono è aperta? */
+    @Composable
+    private fun imeOpen(): Boolean = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
 
     // ------------------------------------------------------------------ NEXUS
     @Composable
@@ -192,7 +199,11 @@ class MainActivity : ComponentActivity() {
             }
         } else {
             Column(Modifier.fillMaxSize().padding(16.dp).imePadding()) {
-                face(Modifier.fillMaxWidth().padding(top = 16.dp))
+                // tastiera aperta: il casco occuperebbe tutto e il campo di testo finirebbe sotto la tastiera,
+                // quindi resta solo la riga di stato e la chat con il campo sempre visibile
+                if (imeOpen()) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    StatusLine(Modifier.weight(1f)); ModeChip()
+                } else face(Modifier.fillMaxWidth().padding(top = 16.dp))
                 Spacer(Modifier.height(12.dp))
                 chat(Modifier.weight(1f))
                 Spacer(Modifier.height(10.dp))
