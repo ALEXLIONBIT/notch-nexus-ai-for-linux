@@ -23,6 +23,7 @@ class Handler(BaseHTTPRequestHandler):
     on_image = None          # callback (prompt, path) per mostrare l'immagine anche sul PC
     status_cb = None         # () -> dict: versione e aggiornamenti di questo PC
     apply_cb = None          # (id) -> None: aggiorna una voce (dal telefono solo "models")
+    cfg = None               # impostazioni di NEXUS: servono per i modelli che girano su llama.cpp
 
     def log_message(self, *a):
         pass
@@ -75,14 +76,50 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send(500, {"error": {"message": str(e)[:300]}})
 
+    def _llama(self, req):
+        """Domanda per un modello che gira su llama.cpp: risposta nel formato di Ollama."""
+        from . import llamacpp
+        try:
+            res = llamacpp.ollama_chat(req, Handler.cfg)
+        except Exception as e:
+            self._send(500, {"error": f"llama.cpp: {e}"[:400]})
+            return False
+        if req.get("stream", True):                   # chi chiede lo streaming riceve tutto in un pezzo solo
+            self._send(200, (json.dumps(res) + "\n").encode(), "application/x-ndjson")
+        else:
+            self._send(200, res)
+        return True
+
     def _proxy(self, method):
         body = self._body() if method == "POST" else None
+        req = None
+        if method == "POST" and self.path.rstrip("/") == "/api/chat" and Handler.cfg is not None:
+            from . import llamacpp
+            try:
+                req = json.loads(body or b"{}")
+            except ValueError:
+                req = None
+            if req and llamacpp.wants(req.get("model", ""), Handler.cfg):
+                return self._llama(req)
+            if llamacpp.running_model():              # il telefono vuole un modello di Ollama: libera la scheda video
+                llamacpp.stop()
         gpu.llm_begin()
         try:
             conn = http.client.HTTPConnection("127.0.0.1", 11434, timeout=600)
             conn.request(method, self.path, body=body, headers={"Content-Type": self.headers.get("Content-Type", "application/json")})
             r = conn.getresponse()
             data = r.read()
+            if r.status >= 400 and req:                # Ollama non regge il modello: si riprova con llama.cpp
+                from . import llamacpp
+                if llamacpp.is_load_error(data.decode("utf-8", "replace")):
+                    print("gateway: Ollama non carica", req.get("model"), "→ llama.cpp")
+                    gpu.llm_end()
+                    try:
+                        if self._llama(req):
+                            llamacpp.remember(req.get("model", ""), Handler.cfg)
+                    finally:
+                        gpu.llm_begin()
+                    return
             self._send(r.status, data, r.getheader("Content-Type", "application/json"))
         except Exception as e:
             self._send(502, {"error": f"Ollama non risponde: {e}"})

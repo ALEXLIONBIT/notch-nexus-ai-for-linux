@@ -33,6 +33,9 @@ Con un clic diventa un **casco robot a schermo intero** con il volto a LED, comp
   RTX 3060 6 GB). Un "vigile della GPU" scarica il cervello prima di disegnare, così non si superano i 6 GB
 - **Aggiornamenti**: Personalizza → Aggiornamenti → "Aggiorna ora" (git pull + riavvio). Anche l'app Android
   si aggiorna da sola dalle release
+- **llama.cpp per i modelli che Ollama non regge** (es. Inkling 2): se Ollama non carica un modello, NEXUS lo fa girare
+  con llama.cpp (scaricato da solo, build ufficiale CUDA/Vulkan) usando gli stessi file di Ollama, anche per il telefono.
+  In config: `llamacpp_models` (modelli che vanno lì) e `llamacpp_bin` (un tuo llama-server)
 - **Aggiornamenti attorno a NEXUS** ("Controlla"): versione di Ollama (anche se la nuova è già nei pacchetti del
   sistema), modelli scaricati che su ollama.com hanno una versione nuova (si aggiornano con un tasto) e programmi del
   sistema usati da NEXUS (screenshot, OCR, Tailscale, Qt…: su Linux apre un terminale con `pacman -Syu` / `apt upgrade`

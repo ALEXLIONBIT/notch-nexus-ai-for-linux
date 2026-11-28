@@ -160,6 +160,40 @@ def _models_item(p):
     return item
 
 
+# ---------------------------------------------------------------- llama.cpp (modelli che Ollama non regge)
+def _llamacpp_item(cfg):
+    from . import llamacpp
+    item = {"id": "llamacpp", "name": "llama.cpp (per i modelli che Ollama non regge)", "current": "", "latest": "",
+            "state": "ok", "note": "", "action": None}
+    exe, src = llamacpp.binary(cfg)
+    try:
+        tag = llamacpp.latest()[0]
+        item["latest"] = tag
+    except Exception as e:
+        tag = ""
+        item["note"] = "non riesco a sapere l'ultima versione: " + str(e)[:80]
+    models = cfg.get("llamacpp_models") or []
+    on = ("Modelli che usano llama.cpp: " + ", ".join(models)) if models else ""
+    if not exe:
+        item.update(state="info", action="llamacpp", current="non installato",
+                    note="Si scarica da solo la prima volta che un modello non parte su Ollama (o installalo ora)")
+        return item
+    cur = llamacpp._num(llamacpp.managed()[0]) if src == "nexus" else llamacpp.version(exe)
+    if cur < 1000:                                   # i llama.cpp compilati a mano dicono "build 1": non si confronta
+        cur = 0
+    item["current"] = f"b{cur}" if cur else "installato"
+    newer = bool(tag) and llamacpp._num(tag) > cur and (cur or src == "nexus")
+    if src == "nexus":
+        if newer:
+            item.update(state="update", action="llamacpp")
+    elif newer:
+        where = {"config": "scelto nelle impostazioni", "own": "compilato da te", "system": "del sistema"}.get(src, "")
+        item.update(state="info", action="llamacpp",
+                    note=f"usi un llama.cpp {where} ({exe}). Con Aggiorna NEXUS ne scarica uno suo, sempre aggiornato")
+    item["note"] = "\n".join(x for x in (item["note"], on) if x)
+    return item
+
+
 # ---------------------------------------------------------------- pacchetti del sistema
 def distro_tool():
     if IS_WIN:
@@ -272,6 +306,7 @@ def check(cfg):
         else:
             items = [{"id": "ollama", "name": "Ollama (motore dei modelli)", "current": "", "latest": "",
                       "state": "info", "note": "non usi Ollama: nessun motore locale da controllare", "action": None}]
+    items.append(_llamacpp_item(cfg))
     items.append(_system_item(updates))
     return items
 
@@ -285,6 +320,11 @@ def apply(cfg, action, status, item=None):
         for i, n in enumerate(names, 1):
             pull(p, n, lambda t, pct=-1, i=i: status(f"[{i}/{len(names)}] {t}", pct))
         return f"{len(names)} modelli aggiornati"
+    if action == "llamacpp":
+        from . import llamacpp
+        llamacpp.stop()                                  # si riavvia da solo alla prossima domanda
+        exe = llamacpp.install(lambda t: status(t, -1))
+        return f"llama.cpp {llamacpp.managed()[0] or ''} pronto ({exe})"
     if action == "ollama_script":
         if not shutil.which("pkexec"):
             open_terminal("curl -fsSL https://ollama.com/install.sh | sh")

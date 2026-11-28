@@ -189,7 +189,7 @@ Item {
     // Ctrl+V nella chat: file o immagine negli appunti → allegati (lista vuota = solo testo, incolla normale)
     function pasteFiles() { return clip.pasteFiles() }
     function copy(t) { clip.copy(t); toast("Copiato") }
-    function toast(t) { toastText = t; toastOff.restart() }
+    function toast(t) { toastText = t; toastOff.interval = 1600; toastOff.restart() }
     Timer { id: toastOff; interval: 1600; onTriggered: store.toastText = "" }
 
     FontLoader { id: dotoFont; source: Qt.resolvedUrl("../fonts/Doto.ttf") }
@@ -243,6 +243,7 @@ Item {
             case "presets": store.presets = d.presets; break
             case "update_status": store.update = d; break
             case "deps_status": store.deps = d; break
+            case "toast": store.toastText = d.text || ""; toastOff.interval = 4000; toastOff.restart(); break
             case "chat": store.chatId = d.id; store.chatTitle = d.title; store.chatMessages = d.messages; break
             case "chat_message":
                 if (d.id !== store.chatId) { store.chatId = d.id; store.chatMessages = [] }

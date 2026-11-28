@@ -85,17 +85,36 @@ class OllamaProvider:
                 out.append(o)
         return out
 
+    status = None            # callback(testo) per dire cosa succede (lo imposta il cervello)
+
     def chat(self, msgs, tools, is_cancelled):
         # Ollama su questo PC: rispetta il vigile della GPU (niente chat mentre si crea un'immagine)
         local = any(h in self.p["base_url"] for h in ("127.0.0.1", "localhost"))
-        if local:
-            from . import gpu
-            gpu.llm_begin()
+        if not local:
+            return self._chat(msgs, tools, is_cancelled)
+        from . import gpu, llamacpp
+        model = self.p["model"]
+        if llamacpp.wants(model, self.opts):           # modello che Ollama non regge: va su llama.cpp
+            return llamacpp.chat(model, msgs, tools, is_cancelled, self.opts, self.status)
+        if llamacpp.running_model():                   # la scheda video torna a Ollama
+            llamacpp.stop()
+        gpu.llm_begin()
         try:
             return self._chat(msgs, tools, is_cancelled)
+        except Cancelled:
+            raise
+        except Exception as e:
+            if not llamacpp.is_load_error(e):
+                raise
+            err = e
         finally:
-            if local:
-                gpu.llm_end()
+            gpu.llm_end()
+        print(f"Ollama non riesce a far girare {model}: {str(err)[:200]} → provo con llama.cpp")
+        if self.status:
+            self.status(f"Ollama non regge {model}: lo provo con llama.cpp")
+        res = llamacpp.chat(model, msgs, tools, is_cancelled, self.opts, self.status)
+        llamacpp.remember(model, self.opts)            # funziona: la prossima volta va subito lì
+        return res
 
     def _chat(self, msgs, tools, is_cancelled):
         opts = {"num_ctx": int(self.opts.get("num_ctx", 16384)), "temperature": 0.3}

@@ -92,6 +92,9 @@ class Nexus:
             from . import gateway
             gateway.start()
             gateway.Handler.status_cb = self.remote_status
+            gateway.Handler.cfg = self.cfg
+            from . import llamacpp
+            llamacpp.on_status = lambda text: self.bus.emit("toast", text=text)
             gateway.Handler.apply_cb = lambda i: threading.Thread(target=self.deps_apply, args=(i,), daemon=True).start()
         except OSError as e:
             print("gateway non avviato:", e)

@@ -32,7 +32,7 @@ Hai dei tool per agire DAVVERO sul PC: usali invece di spiegare come fare.
 - TV: list_tvs per vedere le TV, cast_screen per condividere lo schermo su una TV, stop_cast per fermare.
 - organize_desktop e run_shell chiedono conferma da soli: non chiedere conferma tu prima.
 Non inventare mai risultati: di' solo quello che i tool hanno restituito.
-Data e ora attuali: {now}."""
+Oggi è {now}. L'ora esatta è tra parentesi all'inizio di ogni messaggio dell'utente (non ripeterla se non serve)."""
 
 
 ASKS_ACTION = re.compile(r"\b(apri|aprimi|avvia|lancia|cerca|scrivi|clicca|riordina|sistema|chiudi|vai su|"
@@ -82,7 +82,9 @@ class Brain:
         Se il cervello scelto non risponde, propone di passare a quello locale e riprova."""
         ctx = task.ctx or self.ctx
         try:
-            return self.provider().chat(messages, self.tools.schemas, lambda: task.cancelled)
+            prov = self.provider()
+            prov.status = lambda text: ctx.step("🦙", text)     # es. "Avvio il modello con llama.cpp…"
+            return prov.chat(messages, self.tools.schemas, lambda: task.cancelled)
         except Cancelled:
             raise
         except Exception as e:
@@ -144,7 +146,9 @@ class Brain:
                 lane["history"] = []
             lane["last"] = time.time()
             past = list(lane.get("history") or [])
-        now = datetime.now().strftime("%A %d %B %Y, %H:%M")
+        # nelle istruzioni solo il giorno: restano uguali per ore e llama.cpp/Ollama riusano quello già letto
+        # (istruzioni + descrizione dei tool sono migliaia di token). L'ora va nel messaggio dell'utente.
+        now = datetime.now().strftime("%A %d %B %Y")
         from .osys import os_name
         system = SYSTEM.format(
             now=now, os=os_name(), name=(self.cfg.get("agent_name") or "Nexus").strip(),
@@ -155,7 +159,7 @@ class Brain:
             from .browsermcp import GUIDE
             system += GUIDE
         system += others
-        user = {"role": "user", "content": user_text}
+        user = {"role": "user", "content": f"(ore {datetime.now().strftime('%H:%M')}) {user_text}"}
         if images:
             user["images"] = list(images)
         msgs = [{"role": "system", "content": system}, *past, user]

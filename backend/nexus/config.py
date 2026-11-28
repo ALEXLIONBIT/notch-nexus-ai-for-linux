@@ -33,6 +33,9 @@ DEFAULTS = {
     "ollama_host": "http://127.0.0.1:11434",
     "model": "qwen3.5:4b",               # entra tutto in una GPU da 6 GB
     "num_ctx": 16384,
+    # llama.cpp: modelli che Ollama non sa far girare (li sposta qui da solo, vedi llamacpp.py)
+    "llamacpp_models": [],
+    "llamacpp_bin": "",                  # un llama-server tuo (vuoto = quello scaricato da NEXUS)
     "max_steps": 12,
     "memory_minutes": 5,
     # provider: dove gira il cervello (vedi providers.py). Vuoto = Ollama locale con "model".
