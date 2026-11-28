@@ -33,6 +33,11 @@ Con un clic diventa un **casco robot a schermo intero** con il volto a LED, comp
   RTX 3060 6 GB). Un "vigile della GPU" scarica il cervello prima di disegnare, così non si superano i 6 GB
 - **Aggiornamenti**: Personalizza → Aggiornamenti → "Aggiorna ora" (git pull + riavvio). Anche l'app Android
   si aggiorna da sola dalle release
+- **Aggiornamenti attorno a NEXUS** ("Controlla"): versione di Ollama (anche se la nuova è già nei pacchetti del
+  sistema), modelli scaricati che su ollama.com hanno una versione nuova (si aggiornano con un tasto) e programmi del
+  sistema usati da NEXUS (screenshot, OCR, Tailscale, Qt…: su Linux apre un terminale con `pacman -Syu` / `apt upgrade`
+  / `dnf upgrade`, su Windows usa winget). Dal telefono vedi anche NEXUS e Ollama del PC (puoi far aggiornare i
+  modelli del PC) e l'app dell'orologio, che si apre da sola per aggiornarsi
 - **Terminale e tool diretti**: comandi bash (la cartella resta tra un comando e l'altro), file, appunti, musica,
   luminosità, promemoria, pagine web, Wi-Fi/Bluetooth, processi, blocco/spegnimento. L'agente li preferisce allo schermo
 - **Automode / Manuale**: "Hey Jarvis, mettiti in automode" → niente più conferme (anche dal notch o dalle impostazioni);

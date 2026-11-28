@@ -12,8 +12,8 @@ android {
         applicationId = "dev.nexus.assistant"
         minSdk = 28
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.8.1"
+        versionCode = 13
+        versionName = "0.9.0"
     }
     // firma delle release: ~/.android/nexus-release.keystore (fuori dal repo). Stessa chiave per telefono e orologio,
     // altrimenti gli aggiornamenti non si installano e l'orologio non riceve le impostazioni dal telefono.
@@ -64,5 +64,6 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     if (rootProject.file("libs/tsbridge.aar").exists()) implementation(files(rootProject.file("libs/tsbridge.aar")))
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
+    implementation("androidx.wear:wear-remote-interactions:1.1.0")     // apre l'app sull'orologio per aggiornarla
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
 }

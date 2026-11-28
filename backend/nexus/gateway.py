@@ -2,6 +2,8 @@
 
 Esposta solo ai tuoi dispositivi con:  tailscale serve --bg --tcp 11434 tcp://localhost:8766
 - /v1/images/generations  → immagini con Z-Image-Turbo (API compatibile OpenAI)
+- /nexus/status            → versione di NEXUS e aggiornamenti attorno (Ollama, modelli, sistema) per il telefono
+- /nexus/deps_apply        → il telefono chiede di aggiornare i modelli di Ollama su questo PC
 - tutto il resto           → inoltrato a Ollama, ma in coda se la GPU sta facendo un'immagine
 """
 import base64
@@ -19,6 +21,8 @@ SIZES = {"1024x1024": (1024, 1024), "768x1024": (768, 1024), "1024x768": (1024, 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     on_image = None          # callback (prompt, path) per mostrare l'immagine anche sul PC
+    status_cb = None         # () -> dict: versione e aggiornamenti di questo PC
+    apply_cb = None          # (id) -> None: aggiorna una voce (dal telefono solo "models")
 
     def log_message(self, *a):
         pass
@@ -38,9 +42,25 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path.rstrip("/").endswith("/images/generations"):
             return self._image()
+        if self.path.rstrip("/") == "/nexus/deps_apply":
+            try:
+                what = json.loads(self._body() or b"{}").get("id", "")
+            except ValueError:
+                what = ""
+            if what != "models" or not Handler.apply_cb:      # Ollama e sistema chiedono la password: si fanno dal PC
+                return self._send(400, {"ok": False, "error": "dal telefono si possono aggiornare solo i modelli"})
+            Handler.apply_cb(what)
+            return self._send(200, {"ok": True})
         self._proxy("POST")
 
     def do_GET(self):
+        if self.path.rstrip("/") == "/nexus/status":
+            if not Handler.status_cb:
+                return self._send(404, {"error": "non disponibile"})
+            try:
+                return self._send(200, Handler.status_cb())
+            except Exception as e:
+                return self._send(500, {"error": str(e)[:200]})
         self._proxy("GET")
 
     def _image(self):

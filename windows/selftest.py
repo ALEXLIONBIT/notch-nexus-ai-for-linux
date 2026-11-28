@@ -306,6 +306,20 @@ def main():
         assert ("Windows" if IS_WIN else "Linux") in sysmsg, sysmsg[:200]
         return f"risposta: {reply} ({len(calls)} chiamate, tool usato: system_info)"
 
+    @check("deps_check")
+    def _():
+        from nexus import deps
+        items = deps.check(cfg)
+        ids = [i["id"] for i in items]
+        assert "ollama" in ids and "system" in ids, ids
+        assert all(i["state"] in ("ok", "update", "info", "error") for i in items), items
+        try:                                       # rete: non deve far fallire la build
+            d = deps._registry_digest("gemma2:2b")
+            reg = "registry ok" if d and len(d) == 64 else f"registry: {d}"
+        except Exception as e:
+            reg = f"registry non raggiungibile ({e})"
+        return "; ".join(f"{i['id']}={i['state']}" for i in items) + " · " + reg
+
     @check("update_check")
     def _():
         from nexus.main import Nexus

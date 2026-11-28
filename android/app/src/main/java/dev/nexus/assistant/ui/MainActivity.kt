@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -106,6 +108,7 @@ class MainActivity : ComponentActivity() {
             if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
                 mic.launch(Manifest.permission.RECORD_AUDIO)
             dev.nexus.assistant.core.Updater.check(this@MainActivity)
+            dev.nexus.assistant.core.Deps.check(this@MainActivity)
         }
         val tabs = listOf<Pair<String, ImageVector>>("NEXUS" to Icons.Filled.SmartToy, "Chat" to Icons.Filled.Forum, "Aspetto" to Icons.Filled.Palette,
             "Cervello" to Icons.Filled.Memory, "Configura" to Icons.Filled.Tune)
@@ -260,13 +263,52 @@ class MainActivity : ComponentActivity() {
             Text("Versione installata: " + dev.nexus.assistant.core.Updater.current(ctx) +
                 (dev.nexus.assistant.core.Updater.status.let { if (it.isBlank()) "" else " · $it" }), color = th.inkSoft, fontSize = 13.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SoftButton("Controlla") { scope.launch { dev.nexus.assistant.core.Updater.check(ctx) } }
+                SoftButton("Controlla") {
+                    scope.launch { dev.nexus.assistant.core.Updater.check(ctx) }
+                    scope.launch { dev.nexus.assistant.core.Deps.check(ctx) }
+                }
                 if (dev.nexus.assistant.core.Updater.latest.isNotEmpty())
                     PrimaryButton("Aggiorna a " + dev.nexus.assistant.core.Updater.latest) { scope.launch { dev.nexus.assistant.core.Updater.downloadAndInstall(ctx) } }
             }
+            DepsList()
             Text("Il tuo nome (facoltativo)", color = th.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             NexusField(Prefs.userName, "Come ti chiama NEXUS") { Prefs.userName = it; Prefs.save() }
         }
+    }
+
+    /** Attorno a NEXUS: PC (NEXUS, Ollama, modelli, programmi), Ollama senza NEXUS, orologio. */
+    @Composable
+    private fun DepsList() {
+        val th = Look.theme
+        val ctx = LocalContext.current
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        val d = dev.nexus.assistant.core.Deps
+        Text("Attorno a NEXUS" + if (d.checking) " · controllo…" else "", color = th.ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        if (d.items.isEmpty() && !d.checking)
+            Text("Qui compaiono Ollama e i modelli dei tuoi cervelli, NEXUS sul PC e l'app dell'orologio.", color = th.inkSoft, fontSize = 13.sp)
+        d.items.forEach { it ->
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(chipColor()).padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.size(9.dp).clip(RoundedCornerShape(50)).background(when (it.state) {
+                    "update" -> Color(0xFFFFC857); "error" -> Color(0xFFFF5A6E); "ok" -> Look.led; else -> th.inkSoft }))
+                Column(Modifier.weight(1f)) {
+                    Text(it.name + (if (it.current.isNotBlank()) " · ${it.current}" else "") +
+                        when { it.state == "update" && it.latest.isNotBlank() -> " → ${it.latest}"; it.state == "ok" -> " · aggiornato"; else -> "" },
+                        color = th.ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    val note = if (d.working == it.id && d.progress.isNotBlank()) d.progress else it.note
+                    if (note.isNotBlank()) Text(note, color = if (it.state == "error") Color(0xFFFF5A6E) else th.inkSoft, fontSize = 12.sp)
+                }
+                if (it.action != null)
+                    Text(if (d.working == it.id) "…" else "Aggiorna",
+                        color = if (it.state == "update") Color(0xFF0B1015) else th.ink, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(50))
+                            .background(if (it.state == "update") Look.led else th.bg)
+                            .clickable(enabled = d.working.isEmpty() && !d.checking) { scope.launch { d.apply(ctx, it) } }
+                            .padding(horizontal = 14.dp, vertical = 8.dp))
+            }
+        }
+        if (d.working.isEmpty() && d.progress.isNotBlank())
+            Text(d.progress, color = th.inkSoft, fontSize = 12.sp)
     }
 
     @Composable

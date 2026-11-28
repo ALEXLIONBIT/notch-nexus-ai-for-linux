@@ -1,5 +1,6 @@
 package dev.nexus.assistant.wear
 
+import kotlinx.coroutines.launch
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +47,15 @@ object Sync {
 class SyncService : WearableListenerService() {
     override fun onMessageReceived(e: com.google.android.gms.wearable.MessageEvent) {
         if (e.path == "/nexus/tailscale") TsLogin.begin(applicationContext)
+        if (e.path == "/nexus/update")                 // il telefono: "c'è una versione nuova, aggiornati"
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch { Update.check(applicationContext) }
+    }
+
+    /** Il telefono chiede che versione di NEXUS c'è sull'orologio (Controlla aggiornamenti → Attorno a NEXUS). */
+    override fun onRequest(nodeId: String, path: String, request: ByteArray): com.google.android.gms.tasks.Task<ByteArray>? {
+        if (path != "/nexus/version") return null
+        val v = packageManager.getPackageInfo(packageName, 0).versionName ?: "0"
+        return com.google.android.gms.tasks.Tasks.forResult(v.toByteArray())
     }
 
     override fun onDataChanged(events: DataEventBuffer) {

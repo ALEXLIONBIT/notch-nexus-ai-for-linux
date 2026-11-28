@@ -97,6 +97,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun maybeListenOnOpen(i: Intent?) {
+        if (i?.data?.scheme == "nexus-wear" && i.data?.host == "update") {      // aperto dal telefono: "aggiornati"
+            Core.scope.launch { Update.check(this@MainActivity) }
+            return
+        }
         i?.getStringExtra("ask")?.takeIf { it.isNotBlank() }?.let { Core.ask(it); return }   // domanda già scritta (scorciatoie, test)
         i?.getStringExtra("import_provider")?.takeIf { it.isNotBlank() }?.let { importProvider(it); return }
         val assist = i?.action == Intent.ACTION_ASSIST || i?.action == Intent.ACTION_VOICE_COMMAND

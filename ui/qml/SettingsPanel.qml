@@ -549,6 +549,66 @@ Rectangle {
                     onClicked: panel.s.send("update_apply") }
             }
 
+            // quello che sta attorno a NEXUS: Ollama, modelli, programmi del sistema
+            Text {
+                Layout.preferredWidth: col.width; Layout.topMargin: 6; wrapMode: Text.Wrap
+                color: panel.s.ink; font { family: panel.s.sansFamily; pixelSize: 13; weight: Font.DemiBold }
+                text: "Attorno a NEXUS" + (panel.s.deps.checking ? " · controllo…" : "")
+            }
+            Repeater {
+                model: panel.s.deps.items
+                delegate: Rectangle {
+                    required property var modelData
+                    Layout.preferredWidth: col.width
+                    implicitHeight: depRow.implicitHeight + 16
+                    radius: 10; color: panel.chip
+                    RowLayout {
+                        id: depRow
+                        anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; margins: 10 }
+                        spacing: 8
+                        Rectangle {           // pallino: verde a posto, giallo da aggiornare, grigio informazione, rosso errore
+                            width: 8; height: 8; radius: 4; Layout.alignment: Qt.AlignTop; Layout.topMargin: 5
+                            color: modelData.state === "update" ? "#ffc857" : modelData.state === "error" ? "#ff5a6e"
+                                 : modelData.state === "ok" ? panel.s.led : panel.s.inkSoft
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true; spacing: 2
+                            Text {
+                                Layout.fillWidth: true; wrapMode: Text.Wrap; color: panel.s.ink
+                                font { family: panel.s.sansFamily; pixelSize: 12; weight: Font.DemiBold }
+                                text: modelData.name
+                                    + (modelData.current ? " · " + modelData.current : "")
+                                    + (modelData.state === "update" && modelData.latest ? " → " + modelData.latest
+                                       : modelData.state === "ok" ? " · aggiornato" : "")
+                            }
+                            Text {
+                                visible: text !== ""; Layout.fillWidth: true; wrapMode: Text.Wrap
+                                color: modelData.state === "error" ? "#ff5a6e" : panel.s.inkSoft
+                                font { family: panel.s.sansFamily; pixelSize: 11 }
+                                text: panel.s.deps.working === modelData.id && panel.s.deps.text ? panel.s.deps.text : (modelData.note || "")
+                            }
+                        }
+                        IconButton {
+                            visible: !!modelData.action
+                            enabled: !panel.s.deps.working && !panel.s.deps.checking
+                            text: panel.s.deps.working === modelData.id ? "…" : modelData.action === "system" && panel.s.platform !== "windows" ? "Apri terminale" : "Aggiorna"
+                            tip: modelData.action === "system" && panel.s.platform !== "windows" ? "Apre un terminale con l'aggiornamento del sistema: la password la scrivi tu" : ""
+                            size: 30; tint: modelData.state === "update" ? "#0b1015" : panel.s.ink
+                            fill: modelData.state === "update" ? panel.s.led : panel.chipOn
+                            onClicked: panel.s.send("deps_apply", { id: modelData.id })
+                        }
+                    }
+                }
+            }
+            Text {
+                visible: text !== ""; Layout.preferredWidth: col.width; wrapMode: Text.Wrap
+                color: panel.s.deps.error ? "#ff5a6e" : panel.s.inkSoft
+                font { family: panel.s.sansFamily; pixelSize: 12 }
+                text: panel.s.deps.error ? "Non riesco a controllare: " + panel.s.deps.error
+                    : (!panel.s.deps.working && panel.s.deps.text) ? panel.s.deps.text
+                    : (!panel.s.deps.items.length && !panel.s.deps.checking ? "Premi Controlla per vedere anche Ollama, i modelli e i programmi del sistema." : "")
+            }
+
             // ---------- trascrizione ----------
             Section { text: "Trascrizione" }
             Chips {

@@ -18,6 +18,8 @@ Item {
     property var providerModels: []      // modelli caricati dal provider in modifica
     property string providerMsg: ""
     property var update: ({ current: "", behind: 0, news: [], error: "" })
+    // aggiornamenti di quello che sta attorno a NEXUS (Ollama, modelli, programmi del sistema)
+    property var deps: ({ items: [], checking: false, working: "", text: "", pct: -1, error: "" })
     // Personalizza → Modelli (Ollama del cervello attivo)
     property var models: ({ target: "", url: "", current: "", installed: [], error: "" })
     property var modelResults: []
@@ -44,6 +46,7 @@ Item {
     property string toastText: ""
     property var tailscale: ({ installed: false, state: "", ip: "", name: "", text: "", error: "", working: false })
     property bool connected: nexus.connected
+    onConnectedChanged: if (connected) send("deps_get")
     property bool fullscreen: false
     property bool settingsOpen: false
     property bool happy: false
@@ -239,6 +242,7 @@ Item {
             case "browsers": store.browsers = d.list; break
             case "presets": store.presets = d.presets; break
             case "update_status": store.update = d; break
+            case "deps_status": store.deps = d; break
             case "chat": store.chatId = d.id; store.chatTitle = d.title; store.chatMessages = d.messages; break
             case "chat_message":
                 if (d.id !== store.chatId) { store.chatId = d.id; store.chatMessages = [] }

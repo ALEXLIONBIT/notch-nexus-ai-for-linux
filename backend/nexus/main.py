@@ -52,6 +52,8 @@ class Nexus:
         self.bus = Bus(self.cfg["host"], self.cfg["port"], self.on_command, self.on_connect)
         self.state = "loading"
         self.pending = {}
+        self.deps_state = {"items": [], "checking": False, "working": "", "text": "", "pct": -1, "error": ""}
+        self.deps_lock = threading.Lock()
         self.tasks = {}                        # compiti in corso (anche più di uno: vedi tasks.py)
         self.tasks_lock = threading.RLock()
         self.lanes = {}                        # memoria breve del cervello, una per desktop virtuale
@@ -89,9 +91,12 @@ class Nexus:
         try:                                    # porta per telefono/tablet (cervello + immagini)
             from . import gateway
             gateway.start()
+            gateway.Handler.status_cb = self.remote_status
+            gateway.Handler.apply_cb = lambda i: threading.Thread(target=self.deps_apply, args=(i,), daemon=True).start()
         except OSError as e:
             print("gateway non avviato:", e)
         threading.Thread(target=self.update_check, daemon=True).start()
+        threading.Thread(target=self.deps_check, daemon=True).start()
         self.set_state("idle", self._idle_text())
         print("NEXUS pronto.")
         if not FROZEN:
@@ -153,6 +158,16 @@ class Nexus:
             self.apply_config(msg.get("config", {}))
         elif t == "update_check":
             threading.Thread(target=self.update_check, daemon=True).start()
+            threading.Thread(target=self.deps_check, daemon=True).start()
+        elif t == "deps_get":                         # interfaccia appena collegata: stato già pronto, se c'è
+            if self.deps_state["items"] or self.deps_state["checking"]:
+                self.bus.emit("deps_status", **self.deps_state)
+            else:
+                threading.Thread(target=self.deps_check, daemon=True).start()
+        elif t == "deps_check":
+            threading.Thread(target=self.deps_check, daemon=True).start()
+        elif t == "deps_apply":
+            threading.Thread(target=self.deps_apply, args=(msg.get("id", ""),), daemon=True).start()
         elif t == "browser_mcp":
             self.cfg["browser_mcp"] = bool(msg.get("on"))
             self.cfg.save()
@@ -327,17 +342,17 @@ class Nexus:
             latest = r["tag_name"].removeprefix(RELEASE_PREFIX) if r else __version__
             newer = ver(latest) > ver(__version__)
             news = [l.strip("-* ").strip() for l in (r.get("body") or "").splitlines() if l.strip().startswith(("-", "*"))][:6] if newer else []
-            self.bus.emit("update_status", current=__version__, behind=1 if newer else 0,
+            self._update_emit(current=__version__, behind=1 if newer else 0,
                           news=[f"Versione {latest}"] + ["• " + n for n in news] if newer else [], error="")
         except Exception as e:
-            self.bus.emit("update_status", current=__version__, behind=0, news=[], error=str(e)[:160])
+            self._update_emit(current=__version__, behind=0, news=[], error=str(e)[:160])
 
     def _win_update_apply(self):
         """Scarica l'installer nuovo, lo avvia in silenzio e chiude NEXUS (l'installer lo riapre)."""
         import os
         import urllib.request
         from .config import CACHE
-        self.bus.emit("update_status", current="", behind=0, news=[], error="", working=True)
+        self._update_emit(current="", behind=0, news=[], error="", working=True)
         try:
             r = self._win_latest()
             ext = ".exe" if IS_WIN else ".appimage"
@@ -351,9 +366,9 @@ class Nexus:
                         break
                     f.write(b)
         except Exception as e:
-            self.bus.emit("update_status", current="", behind=0, news=[], error="download: " + str(e)[:150])
+            self._update_emit(current="", behind=0, news=[], error="download: " + str(e)[:150])
             return
-        self.bus.emit("update_status", current="", behind=0, news=[], error="", restarting=True)
+        self._update_emit(current="", behind=0, news=[], error="", restarting=True)
         if not IS_WIN:
             # AppImage: sostituisce il file con quello nuovo e lo riapre
             import shutil
@@ -384,7 +399,7 @@ class Nexus:
     def restart(self):
         """Personalizza → Aggiornamenti → Riavvia: chiude e riapre tutto NEXUS."""
         import sys
-        self.bus.emit("update_status", current="", behind=0, news=[], error="", restarting=True)
+        self._update_emit(current="", behind=0, news=[], error="", restarting=True)
         time.sleep(0.3)
         if IS_WIN and FROZEN:
             subprocess.Popen(f'cmd /c timeout /t 2 /nobreak >nul & start "" "{sys.executable}"',
@@ -397,6 +412,59 @@ class Nexus:
         subprocess.Popen(["sh", "-c", "sleep 1; systemctl --user --no-block restart nexus-backend nexus-ui || "
                           f"(pkill -f 'nexus.main'; pkill -f 'ui/app.py'; setsid {ROOT}/scripts/nexus >/dev/null 2>&1 &)"],
                          start_new_session=True)
+
+    def _update_emit(self, **kw):
+        if kw.get("current") or kw.get("error"):
+            self.update_state = dict(kw)
+        self.bus.emit("update_status", **kw)
+
+    def remote_status(self):
+        """Per il telefono (gateway /nexus/status): versione di NEXUS su questo PC e aggiornamenti attorno."""
+        from . import __version__
+        from .osys import os_name
+        if not self.deps_state["items"] and not self.deps_state["checking"]:
+            threading.Thread(target=self.deps_check, daemon=True).start()
+        up = getattr(self, "update_state", {}) or {}
+        return {"nexus": {"version": __version__, "current": up.get("current", ""), "behind": up.get("behind", 0),
+                          "news": up.get("news", [])[:4], "packaged": bool(IS_WIN or PACKAGED)},
+                "os": os_name(), "deps": self.deps_state}
+
+    # ---------- aggiornamenti delle dipendenze (Ollama, modelli, programmi del sistema) ----------
+    def _deps_emit(self, **kw):
+        self.deps_state.update(kw)
+        self.bus.emit("deps_status", **self.deps_state)
+
+    def deps_check(self):
+        from . import deps
+        with self.deps_lock:
+            busy = self.deps_state["checking"] or self.deps_state["working"]
+            if not busy:
+                self.deps_state["checking"] = True
+        if busy:
+            return self.bus.emit("deps_status", **self.deps_state)
+        self._deps_emit(checking=True, error="")
+        try:
+            self._deps_emit(items=deps.check(self.cfg), checking=False)
+        except Exception as e:
+            self._deps_emit(checking=False, error=str(e)[:160])
+
+    def deps_apply(self, item_id):
+        from . import deps
+        st = self.deps_state
+        item = next((i for i in st["items"] if i["id"] == item_id), None)
+        with self.deps_lock:
+            if not item or not item.get("action") or st["working"] or st["checking"]:
+                return
+            st["working"] = item_id
+        self._deps_emit(working=item_id, text="", pct=-1, error="")
+        try:
+            msg = deps.apply(self.cfg, item["action"], lambda t, pct=-1: self._deps_emit(text=t, pct=pct), item)
+            self._deps_emit(working="", text=msg, pct=-1)
+        except Exception as e:
+            self._deps_emit(working="", text="", error=str(e)[:200])
+            return
+        if item["action"] != "system":               # il terminale lo chiude l'utente: lì ricontrolla lui
+            self.deps_check()
 
     def _git(self, *args, timeout=60):
         from .config import ROOT
@@ -412,24 +480,24 @@ class Nexus:
                 raise RuntimeError(f.stderr.strip()[:120] or "git fetch non riuscito")
             behind = int(self._git("rev-list", "--count", "HEAD..@{u}").stdout.strip() or 0)
             news = self._git("log", "--format=• %s", "HEAD..@{u}").stdout.strip().splitlines()[:6]
-            self.bus.emit("update_status", current=cur, behind=behind, news=news, error="")
+            self._update_emit(current=cur, behind=behind, news=news, error="")
         except Exception as e:
-            self.bus.emit("update_status", current="", behind=0, news=[], error=str(e)[:160])
+            self._update_emit(current="", behind=0, news=[], error=str(e)[:160])
 
     def update_apply(self):
         if IS_WIN or PACKAGED:
             return self._win_update_apply()
         from .config import ROOT
-        self.bus.emit("update_status", current="", behind=0, news=[], error="", working=True)
+        self._update_emit(current="", behind=0, news=[], error="", working=True)
         old_req = (ROOT / "backend/requirements.txt").read_text()
         r = self._git("pull", "--ff-only", timeout=180)
         if r.returncode != 0:
-            self.bus.emit("update_status", current="", behind=0, news=[], error="git pull: " + (r.stderr or r.stdout)[-160:])
+            self._update_emit(current="", behind=0, news=[], error="git pull: " + (r.stderr or r.stdout)[-160:])
             return
         if (ROOT / "backend/requirements.txt").read_text() != old_req:
             subprocess.run(["uv", "pip", "install", "-p", str(ROOT / "backend/.venv/bin/python"), "-r",
                             str(ROOT / "backend/requirements.txt")], capture_output=True, timeout=1200)
-        self.bus.emit("update_status", current="", behind=0, news=[], error="", restarting=True)
+        self._update_emit(current="", behind=0, news=[], error="", restarting=True)
         # riavvio: systemd se c'è, altrimenti rilancia lo script
         subprocess.Popen(["sh", "-c", "sleep 1; systemctl --user --no-block restart nexus-backend nexus-ui || "
                           f"(pkill -f 'nexus.main'; pkill -f 'ui/app.py'; setsid {ROOT}/scripts/nexus >/dev/null 2>&1 &)"],
@@ -621,7 +689,11 @@ class Nexus:
                           current=p.get("model", ""), installed=models.installed(p), error="")
         except Exception as e:
             if t == "model_pull":
-                progress("", error=str(e)[:200])
+                err = str(e)[:200]
+                if "requires ollama version" in err or "newer version of ollama" in err.lower():
+                    err += " · Aggiorna Ollama da Personalizza → Aggiornamenti"
+                    threading.Thread(target=self.deps_check, daemon=True).start()
+                progress("", error=err)
             else:
                 self.bus.emit("models", target=(p or {}).get("name", ""), url=(p or {}).get("base_url", ""),
                               current=(p or {}).get("model", ""), installed=[], error=str(e)[:200])
